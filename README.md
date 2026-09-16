@@ -25,6 +25,12 @@ Node.js 22 or newer. Apache-2.0.
 | query builder                                      | **done**, 30/30 corpus, 21 executed by a node |
 | HTTP surface — objects, files, backup, health      | **done**, exercised against a running node    |
 | session token — §5.8                               | **done**, open once, `Bearer` thereafter      |
+| `/watch`, `/metrics`, `POST /password`             | not yet                                       |
+
+`HEAD` on the file routes is **deliberately** not offered rather than pending. The
+node reads the whole object and discards the body, so it costs the server exactly
+what a `GET` costs; presenting it as a cheap `exists()` would be an invitation to
+call it in a loop.
 
 The codec is usable on its own if you are writing tooling around the wire format:
 
