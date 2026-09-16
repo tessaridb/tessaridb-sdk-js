@@ -27,10 +27,30 @@
  * something that terminates TLS.
  */
 
+export { connect, Connection } from './connection.ts';
+export type { ConnectOptions, Reply } from './connection.ts';
 export { encodeValue, writeValue } from './codec/encode.ts';
 export { decodeValue, readValue } from './codec/decode.ts';
 export { ByteReader, ByteWriter } from './codec/bytes.ts';
 export { HandshakeError, ProtocolError, RefusalError } from './error.ts';
+export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';
+export { CEILING, FRAME, TooLargeError, UnknownFrameError } from './wire/frame.ts';
+export { readAnswer } from './wire/outcome.ts';
+export type {
+  AccessPath,
+  Exactness,
+  Note,
+  Outcome,
+  RecordRow,
+  Suggestion,
+} from './wire/outcome.ts';
+export type {
+  Change,
+  Credentials,
+  Elsewhere,
+  Fate,
+  Settlement,
+} from './wire/message.ts';
 export type {
   Bound,
   Geometry,
