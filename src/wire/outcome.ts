@@ -122,7 +122,13 @@ function readOutcome(slice: Uint8Array): Outcome {
       return readRecords(r);
     case OUTCOME.value: {
       const names = readNames(r);
-      return { kind: 'value', names, value: readValue(r) };
+      // §3.5 writes this outcome as "names · `bytes` value", and `bytes` at the
+      // frame layer is a u32 length and then the bytes — not a bare value.
+      // Reading it raw reads the length's first byte as a type tag, which is
+      // `0x00` and therefore an error. Loud, but only for a client that ever
+      // asks for a value outcome: a suite that only SELECTs never produces one,
+      // which is how this shipped and why the Go client found it against a node.
+      return { kind: 'value', names, value: decodeComplete(r.lenbytes('value')) };
     }
     case OUTCOME.keys: {
       const count = r.u32('key count');

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { connect, RefusalError } from '../src/index.ts';
-import type { Outcome } from '../src/index.ts';
+import type { Outcome, Value } from '../src/index.ts';
 
 /**
  * Exercised against a running node.
@@ -197,5 +197,37 @@ runs('a subscription delivers a change written by another connection', async () 
   } finally {
     watcher?.close();
     writer?.close();
+  }
+});
+
+runs('a value outcome carries a length before its value', async () => {
+  // §3.5 writes this outcome as "names · `bytes` value", and `bytes` at the frame
+  // layer is a u32 length then the bytes. Reading the value raw reads that
+  // length's first byte as a type tag — `0x00`, which is not one.
+  //
+  // It fails loudly, and only for a client that ever asks for a value outcome.
+  // This suite SELECTed and subscribed and never returned one, so the bug shipped
+  // here and was found by the Go client against the same node.
+  const connection = await connect(address());
+  try {
+    await connection.execute(SCHEMA);
+
+    for (const [script, check] of [
+      ['RETURN 1;', (v: Value) => v.kind === 'integer' && v.value === 1n],
+      [`RETURN 'hello';`, (v: Value) => v.kind === 'string' && v.value === 'hello'],
+      ['RETURN [1, 2];', (v: Value) => v.kind === 'array' && v.items.length === 2],
+      ['RETURN NONE;', (v: Value) => v.kind === 'none'],
+    ] as [string, (v: Value) => boolean][]) {
+      const reply = await connection.execute(`${USE} ${script}`);
+      assert.equal(reply.kind, 'answer');
+      const outcome = reply.kind === 'answer' ? reply.outcomes.at(-1) : undefined;
+      assert.equal(outcome?.kind, 'value', `${script}: a value outcome`);
+      assert.ok(
+        check((outcome as { value: Value }).value),
+        `${script}: came back as ${JSON.stringify((outcome as { value: Value }).value, (_k, v) => (typeof v === 'bigint' ? `${v}` : v))}`,
+      );
+    }
+  } finally {
+    await connection.close();
   }
 });
