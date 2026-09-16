@@ -82,3 +82,5 @@ export type { JsonValue } from './http/json.ts';
 export { interpret, InterpretError } from './http/interpret.ts';
 export type { Names, Shape } from './http/interpret.ts';
 export { readGeometry, GeoJsonError } from './http/geojson.ts';
+export { readAnswerBody, readOutcome } from './http/answer.ts';
+export type { HttpOutcome, Plan, Row } from './http/answer.ts';
