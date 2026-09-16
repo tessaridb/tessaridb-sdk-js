@@ -77,3 +77,8 @@ export { and, compare, or } from './query/filter.ts';
 export type { Filter, Operator } from './query/filter.ts';
 export { BuilderError } from './query/grammar.ts';
 export type { NamePosition, RefusalReason, Rendered } from './query/grammar.ts';
+export { parseJson, JsonError } from './http/json.ts';
+export type { JsonValue } from './http/json.ts';
+export { interpret, InterpretError } from './http/interpret.ts';
+export type { Names, Shape } from './http/interpret.ts';
+export { readGeometry, GeoJsonError } from './http/geojson.ts';

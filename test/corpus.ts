@@ -152,8 +152,13 @@ function recordIdOf(json: Json): RecordId {
 }
 
 function boundOf(json: unknown): Bound {
+  // The two corpora spell an open end differently — the value corpus writes the
+  // bare word, the JSON corpus writes it as a tagged object like every other
+  // bound. Both are read, because a translator that knew only one would fail a
+  // corpus for its notation rather than this client for its behaviour.
   if (json === 'unbounded') return { kind: 'unbounded' };
   const [tag, body] = one(json as Json);
+  if (tag === 'unbounded') return { kind: 'unbounded' };
   if (tag === 'included') return { kind: 'included', value: valueOf(body as Json) };
   if (tag === 'excluded') return { kind: 'excluded', value: valueOf(body as Json) };
   throw new Error(`unknown range bound in the corpus: ${tag}`);
@@ -169,6 +174,16 @@ function positionsOf(json: unknown): Position[] {
 }
 
 function polygonOf(json: Json): Polygon {
+  // Second notation divergence between the corpora: the value corpus names the
+  // two parts, the JSON corpus writes GeoJSON's flat list of rings with the
+  // exterior first. Both mean the same polygon.
+  if (Array.isArray(json)) {
+    const [exterior, ...interiors] = json as Json[];
+    return {
+      exterior: positionsOf(exterior ?? []),
+      interiors: interiors.map(positionsOf),
+    };
+  }
   const p = json as unknown as { exterior: Json[]; interiors?: Json[] };
   return {
     exterior: positionsOf(p.exterior),

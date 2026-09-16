@@ -13,7 +13,7 @@ nothing else.
 npm install @tessaridb/client
 ```
 
-Node.js 20 or newer. Apache-2.0.
+Node.js 22 or newer. Apache-2.0.
 
 ## What works today
 
@@ -96,8 +96,14 @@ half — which means shipping the narrowing described above as though it were th
 client. If you need database access from a browser, put a server in front of it;
 that server is also where your credentials belong.
 
-This package runs on Node.js 20+ and on the runtimes that implement `node:net`,
+This package runs on Node.js 22+ and on the runtimes that implement `node:net`,
 which today are Deno and Bun.
+
+**22 and not 20, for one reason.** A record identity is an `i64`, and
+`JSON.parse` reads every number as a double — so an id past 2^53 comes back
+changed, with nothing anywhere reporting it. The fix is the parser's source-text
+access, which arrived in Node 22. On a runtime without it this client refuses to
+read the body rather than reading it wrongly.
 
 ## There is no TLS on the wire protocol
 
