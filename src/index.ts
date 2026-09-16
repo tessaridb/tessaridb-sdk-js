@@ -60,3 +60,20 @@ export type {
   Ring,
   Value,
 } from './value.ts';
+export {
+  CreateInTable,
+  CreateRecord,
+  DeleteRecord,
+  Select,
+  UpdateRecord,
+  createInTable,
+  createRecord,
+  deleteRecord,
+  select,
+  updateRecord,
+} from './query/statement.ts';
+export type { Direction } from './query/statement.ts';
+export { and, compare, or } from './query/filter.ts';
+export type { Filter, Operator } from './query/filter.ts';
+export { BuilderError } from './query/grammar.ts';
+export type { NamePosition, RefusalReason, Rendered } from './query/grammar.ts';
