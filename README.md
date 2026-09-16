@@ -4,10 +4,10 @@ A client for [TessariDB](https://tessaridb.com) in TypeScript, written from the
 [protocol specification](https://github.com/tessaridb/tessaridb-protocol) and
 nothing else.
 
-> **Status: early.** The wire half is complete — the value codec, the connection
-> and the query builder, each proven against the shared conformance corpora and
-> exercised against a running node. The HTTP surface is not written yet — see
-> [What works today](#what-works-today).
+> **Status: early.** Both transports are in: the value codec, the connection and
+> the query builder on the wire, and the object, file, backup and operational
+> routes over HTTP. Each is proven against the shared conformance corpora and
+> exercised against a running node — see [What works today](#what-works-today).
 
 ```
 npm install @tessaridb/client
@@ -23,7 +23,8 @@ Node.js 22 or newer. Apache-2.0.
 | wire connection, greeting, statements, answers     | **done**, exercised against a running node    |
 | change subscription                                | **done**, exercised against a running node    |
 | query builder                                      | **done**, 30/30 corpus, 21 executed by a node |
-| HTTP surface — objects, files, backup, health      | not yet                                       |
+| HTTP surface — objects, files, backup, health      | **done**, exercised against a running node    |
+| session token — §5.8                               | **done**, open once, `Bearer` thereafter      |
 
 The codec is usable on its own if you are writing tooling around the wire format:
 
@@ -76,6 +77,53 @@ the same query built in any client language produces the same text and the same
 parameter numbering. That is what the corpus checks, and this client additionally
 executes every rendered case against a running node — the only check that reaches
 the parser.
+
+## Objects, files and health
+
+Everything the wire protocol does not serve is here, and it is a different client
+because it is a different surface rather than an alternative to the first one.
+
+```ts
+import { HttpClient } from '@tessaridb/client';
+
+const node = new HttpClient({
+  host: '127.0.0.1',
+  port: 8000,
+  credentials: { user: 'app', password: process.env.TESSARIDB_PASSWORD },
+});
+
+await node.put('acme', 'app', 'uploads', 'reports/100% done.pdf', bytes);
+const back = await node.get('acme', 'app', 'uploads', 'reports/100% done.pdf');
+const listing = await node.list('acme', 'app', 'uploads');
+const health = await node.health();
+```
+
+**The password is spent once.** A node verifies Basic with Argon2id at the OWASP
+floor, and HTTP has no connection to hang a session on, so that cost is paid on
+_every_ request that carries one. This client opens a session on its first
+authenticated call and presents the token after — and when a token stops working,
+which it does four different ways that all answer `401`, it signs in again and
+retries once, without the caller seeing it.
+
+A client that skipped this would be correct, would pass every test, and would be
+slower than the protocol intends by an order of magnitude. Measured against a
+debug build over loopback, on a statement that does nothing: **31.5 ms per request
+with a password against 14.7 ms with a token.** On a real deployment the gap is
+larger, because the work being repeated is the same and the work being avoided is
+not.
+
+**`node.script()` takes no parameters, and that is deliberate.** A parameter on
+this route is a JSON string carrying _TessariQL source_, not a value — `{"x":"3"}`
+is the number 3 and `{"x":"hello"}` is a `400`. Passing a caller's string through
+would be a type-confusion hazard that no test written against it would show, so
+this client does not build the bridge: a statement with a value in it goes over
+the wire, where a parameter is an encoded value and none of this arises.
+
+**A `404` is an answer.** A file that is not there reads as `undefined`, and a
+file that exists and is empty reads as zero bytes — these are different facts and
+the server draws the line, so this client does not erase it. A listing that comes
+back `undefined` means the name is not a bucket; an empty array means the bucket
+is there and holds nothing.
 
 ## Two transports, and the choice is forced
 
