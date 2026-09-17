@@ -1,8 +1,11 @@
 {
   "name": "@tessaridb/client",
-  "version": "0.0.1-alpha",
+  "version": "0.1.0",
   "description": "Client for TessariDB \u2014 the binary wire protocol for statements and change subscriptions, HTTP for objects, files, backup and operations",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
