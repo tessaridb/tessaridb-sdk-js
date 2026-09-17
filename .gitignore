@@ -4,3 +4,6 @@ dist/
 .DS_Store
 .bgv
 .bgv/
+
+# Local development hooks: they belong to a working copy, not to the repository.
+.githooks/
