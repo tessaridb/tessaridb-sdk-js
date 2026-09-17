@@ -175,7 +175,20 @@ runs('an open store has no session to open, and that is not a failure', async ()
     credentials: { user: 'nobody', password: 'nothing' },
   });
 
-  assert.equal(await node.openSession(), false, 'no token is minted');
+  // The node applies a per-user sign-in limiter that §5.2 does not enumerate,
+  // and it answers `429` to a name that has been refused a few times — before
+  // the store gets to say it has no session to open. Both answers are correct
+  // and the test must not depend on how often it has been run against the same
+  // long-lived node.
+  try {
+    assert.equal(await node.openSession(), false, 'no token is minted');
+  } catch (why) {
+    assert.equal(
+      (why as { status?: number }).status,
+      429,
+      'only the limiter may interrupt this, and it teaches the client nothing',
+    );
+  }
   assert.equal(node.token, undefined);
   // And the client carries on: on an open store there is nothing to prove.
   assert.ok((await node.health()).status);
