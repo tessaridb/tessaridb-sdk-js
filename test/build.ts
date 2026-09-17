@@ -73,6 +73,12 @@ export function render(build: Json): Rendered {
     if (s['start'] !== undefined) {
       statement.start(s['start'] as number);
     }
+    if (s['staleness'] !== undefined) {
+      statement.staleness(s['staleness'] as string);
+    }
+    if (s['answered_by'] !== undefined) {
+      statement.answeredBy(s['answered_by'] as string);
+    }
     if (s['limit'] !== undefined) {
       statement.limit(s['limit'] as number);
     }

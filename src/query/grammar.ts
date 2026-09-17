@@ -10,8 +10,9 @@
 
 import type { Value } from '../value.ts';
 
-/** The two reasons a builder reports. The contract names these and no others. */
-export type RefusalReason = 'not-a-name' | 'incomplete';
+/** The reasons a builder reports. The contract names these and no others. */
+export type RefusalReason =
+  'not-a-name' | 'incomplete' | 'not-a-span' | 'not-an-answerer';
 
 /** Which grammatical position was at fault. The contract's own wording. */
 export type NamePosition = 'a table' | 'a field';
@@ -54,6 +55,72 @@ export class BuilderError extends Error {
   static incomplete(message: string): BuilderError {
     return new BuilderError(message, 'incomplete', undefined, undefined);
   }
+
+  static notASpan(offending: string): BuilderError {
+    return new BuilderError(
+      `${JSON.stringify(offending)} is not a span — write digits and one of ` +
+        'ns, us, ms, s, m, h, d, w, as in "30s" or "1m30s"',
+      'not-a-span',
+      undefined,
+      offending,
+    );
+  }
+
+  static notAnAnswerer(offending: string): BuilderError {
+    return new BuilderError(
+      `${JSON.stringify(offending)} is not an answerer — write ANY or LEADER`,
+      'not-an-answerer',
+      undefined,
+      offending,
+    );
+  }
+}
+
+/** The node's own eight units, longest first so `ms` is read before `m`. */
+const SPAN_UNITS = ['ms', 'ns', 'us', 's', 'm', 'h', 'd', 'w'] as const;
+
+/**
+ * span ::= 1*( 1*DIGIT unit ), with the units above.
+ *
+ * Checked because a span is written into the statement TEXT rather than bound —
+ * a node refuses a parameter in that position — so this is the one clause where
+ * a caller's characters reach the script.
+ *
+ * The VALUE is never judged here. A bound tighter than the cluster's floor is the
+ * node's refusal to make, and its message names the floor; a client that guessed
+ * would be wrong on the next cluster.
+ */
+export function span(text: string): string {
+  let rest = text;
+  let seen = false;
+  while (rest.length > 0) {
+    let digits = 0;
+    while (digits < rest.length && rest[digits]! >= '0' && rest[digits]! <= '9') {
+      digits += 1;
+    }
+    if (digits === 0) {
+      throw BuilderError.notASpan(text);
+    }
+    rest = rest.slice(digits);
+    const unit = SPAN_UNITS.find((candidate) => rest.startsWith(candidate));
+    if (unit === undefined) {
+      throw BuilderError.notASpan(text);
+    }
+    rest = rest.slice(unit.length);
+    seen = true;
+  }
+  if (!seen) {
+    throw BuilderError.notASpan(text);
+  }
+  return text;
+}
+
+/** `ANY` or `LEADER`, and no third. */
+export function answerer(word: string): string {
+  if (word !== 'ANY' && word !== 'LEADER') {
+    throw BuilderError.notAnAnswerer(word);
+  }
+  return word;
 }
 
 /**

@@ -10,7 +10,15 @@
 
 import type { Value } from '../value.ts';
 import { type Filter, renderFilter } from './filter.ts';
-import { Binder, BuilderError, count, name, type Rendered } from './grammar.ts';
+import {
+  answerer,
+  Binder,
+  BuilderError,
+  count,
+  name,
+  type Rendered,
+  span,
+} from './grammar.ts';
 
 export type Direction = 'asc' | 'desc';
 
@@ -54,6 +62,8 @@ export class Select {
   #filter: Filter | undefined;
   #start: string | undefined;
   #limit: string | undefined;
+  #staleness: string | undefined;
+  #answeredBy: string | undefined;
 
   constructor(table: string) {
     this.#table = name('a table', table);
@@ -104,6 +114,30 @@ export class Select {
     return this;
   }
 
+  /**
+   * How far behind the node answering this read may be — `'30s'`, `'1m30s'`.
+   *
+   * A candidate filter and never a marker: it says which nodes may answer at
+   * all, rather than labelling an answer as stale. A read no node can satisfy is
+   * refused by the node rather than quietly promoted to the one that can.
+   */
+  staleness(bound: string): this {
+    this.#staleness = span(bound);
+    return this;
+  }
+
+  /**
+   * `'ANY'` or `'LEADER'` — where the answer must come from.
+   *
+   * Not a tighter {@link staleness}: a follower at zero lag is *level*, not
+   * authoritative, so no freshness bound expresses *this must come from where
+   * writes are decided*.
+   */
+  answeredBy(who: string): this {
+    this.#answeredBy = answerer(who);
+    return this;
+  }
+
   render(): Rendered {
     const binder = new Binder();
     const projection =
@@ -130,6 +164,14 @@ export class Select {
     }
     if (this.#limit !== undefined) {
       script += ` LIMIT ${this.#limit}`;
+    }
+    // Both come after LIMIT and STALENESS comes before ANSWERED BY, because a
+    // node's parser accepts no other sequence.
+    if (this.#staleness !== undefined) {
+      script += ` STALENESS ${this.#staleness}`;
+    }
+    if (this.#answeredBy !== undefined) {
+      script += ` ANSWERED BY ${this.#answeredBy}`;
     }
     return { script: `${script};`, parameters: binder.parameters };
   }

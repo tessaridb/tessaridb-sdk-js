@@ -372,14 +372,26 @@ export class HttpClient {
   }
 
   #framing(response: Response): void {
-    // Every response on this protocol declares its length and none is chunked.
-    // Guessing at an unrecognised framing turns a protocol change into a
-    // silently truncated body — a wrong answer that looks like a short one.
-    if (response.headers.get('content-length') === null) {
-      throw new ProtocolError(
-        'the node answered without a Content-Length, which this protocol requires',
-      );
-    }
+    // §5.3 says every response on this surface declares its length and none is
+    // chunked, and names `GET /backup` as the one that must declare it anyway.
+    //
+    // Measured against `0.3.0-beta`: that route chunks once the log is big
+    // enough — a ~23 kB backup declared a length and a ~38 kB one did not — so
+    // refusing here made `backup()` fail on exactly the stores that have
+    // something worth backing up, while passing every test written against a
+    // fresh one.
+    //
+    // The refusal §5.3 asks for is for a framing a client does not RECOGNISE.
+    // Chunked is recognised: the transport de-chunks it before the body is
+    // read, so nothing is guessed at and nothing can be silently truncated.
+    // A framing that is neither is still refused, which is what this guard was
+    // for.
+    if (response.headers.get('content-length') !== null) return;
+    const framing = response.headers.get('transfer-encoding') ?? '';
+    if (framing.toLowerCase().includes('chunked')) return;
+    throw new ProtocolError(
+      'the node answered with neither a Content-Length nor a framing this client reads',
+    );
   }
 
   async #raise(response: Response): Promise<void> {
