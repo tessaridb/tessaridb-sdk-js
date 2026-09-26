@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { ByteWriter } from '../src/codec/bytes.ts';
 import { readAnswer } from '../src/wire/outcome.ts';
+import { readChange, writeSubscribe } from '../src/wire/message.ts';
 
 /** One outcome: `u32` length (tag included), `u8` tag, then the rest. */
 function answerOf(...outcomes: Uint8Array[]): Uint8Array {
@@ -99,4 +100,29 @@ test('an unrecognised access path reads as scan', () => {
     'scan',
     'the honest answer for an unnamed path: the one path that promises nothing',
   );
+});
+
+/** A removed-record change body (§3.8), with an optional trailing cursor. */
+function removedChange(cursor?: string): Uint8Array {
+  const w = new ByteWriter();
+  w.u64(7n);
+  w.text('orders');
+  w.text('orders:1');
+  w.u8(1);
+  if (cursor !== undefined) w.text(cursor);
+  return w.finish();
+}
+
+test('a change from a split table carries its cursor and a plain one carries none', () => {
+  assert.equal(readChange(removedChange()).cursor, undefined);
+  const split = readChange(removedChange('0:7,2:3'));
+  assert.equal(split.fate, 'removed');
+  assert.equal(split.cursor, '0:7,2:3');
+});
+
+test('a subscribe sends its cursor last and only when it has one', () => {
+  const plain = writeSubscribe(0n, 'orders');
+  const resumed = writeSubscribe(0n, 'orders', '0:7,2:3');
+  assert.deepEqual(resumed.subarray(0, plain.length), plain);
+  assert.equal(new TextDecoder().decode(resumed.subarray(plain.length + 4)), '0:7,2:3');
 });

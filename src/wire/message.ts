@@ -52,7 +52,11 @@ export function writeRequest(
  * it twice; resuming with one not yet reached reports being caught up. Both are
  * silent, which is why this library owns the arithmetic rather than documenting it.
  */
-export function writeSubscribe(from: bigint, table?: string): Uint8Array {
+export function writeSubscribe(
+  from: bigint,
+  table?: string,
+  cursor?: string,
+): Uint8Array {
   const w = new ByteWriter();
   w.u64(from);
   if (table === undefined) {
@@ -61,6 +65,9 @@ export function writeSubscribe(from: bigint, table?: string): Uint8Array {
     w.u8(1);
     w.text(table);
   }
+  // Last and only when present (§3.7): without it this is the frame every
+  // earlier node reads.
+  if (cursor !== undefined) w.text(cursor);
   return w.finish();
 }
 
@@ -74,6 +81,12 @@ export interface Change {
   identity: string;
   fate: Fate;
   value?: Value;
+  /**
+   * On a feed over a split table, where to resume after this change — its logs
+   * count separately, so no one `sequence` says where the feed was. Absent on
+   * every other feed.
+   */
+  cursor?: string;
 }
 
 export function readChange(body: Uint8Array): Change {
@@ -82,17 +95,25 @@ export function readChange(body: Uint8Array): Change {
   const table = r.text('change table');
   const identity = r.text('change identity');
   const fate = r.u8('change fate');
-  if (fate === 1) return { sequence, table, identity, fate: 'removed' };
-  if (fate !== 0) throw new ProtocolError(`malformed change fate byte ${fate}`);
-  const bytes = r.lenbytes('change value');
-  const inner = new ByteReader(bytes);
-  const value = readValue(inner);
-  if (!inner.exhausted) {
-    throw new ProtocolError(
-      `${inner.remaining} trailing byte(s) after a change's value`,
-    );
+  let change: Change;
+  if (fate === 1) {
+    change = { sequence, table, identity, fate: 'removed' };
+  } else if (fate === 0) {
+    const bytes = r.lenbytes('change value');
+    const inner = new ByteReader(bytes);
+    const value = readValue(inner);
+    if (!inner.exhausted) {
+      throw new ProtocolError(
+        `${inner.remaining} trailing byte(s) after a change's value`,
+      );
+    }
+    change = { sequence, table, identity, fate: 'written', value };
+  } else {
+    throw new ProtocolError(`malformed change fate byte ${fate}`);
   }
-  return { sequence, table, identity, fate: 'written', value };
+  // §3.8: bytes after the change are its cursor; none means the feed has none.
+  if (!r.exhausted) change.cursor = r.text('change cursor');
+  return change;
 }
 
 /**
