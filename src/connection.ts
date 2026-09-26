@@ -182,12 +182,17 @@ export class Connection {
    * Nothing is lost — the log is the buffer — but that is why `resumeAfter` is
    * the parameter rather than a raw position: reconnecting is the normal path,
    * not the exceptional one.
+   *
+   * A feed over a split table resumes by `cursor` instead — the `cursor` of the
+   * last change handled, sent back as it came. The node resumes after that
+   * change, so no arithmetic is owed.
    */
   async *changes(
     options: {
       resumeAfter?: bigint;
       fromStart?: boolean;
       table?: string;
+      cursor?: string;
     } = {},
   ): AsyncGenerator<Change> {
     if (this.#subscribed)
@@ -201,7 +206,7 @@ export class Connection {
         : options.resumeAfter + 1n;
 
     await this.#stream.write(
-      frame(FRAME.subscribe, writeSubscribe(from, options.table)),
+      frame(FRAME.subscribe, writeSubscribe(from, options.table, options.cursor)),
     );
 
     for (;;) {
