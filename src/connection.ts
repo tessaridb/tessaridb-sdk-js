@@ -1,4 +1,3 @@
-import { Socket } from 'node:net';
 import { HandshakeError, ProtocolError, RefusalError } from './error.ts';
 import {
   FRAME,
@@ -9,6 +8,7 @@ import {
   frame,
   greeting,
 } from './wire/frame.ts';
+import type { Carrier } from './wire/carrier.ts';
 import { FrameStream, IoError } from './wire/stream.ts';
 import {
   readChange,
@@ -24,11 +24,26 @@ import type { Value } from './value.ts';
 
 export interface ConnectOptions {
   host: string;
+  /**
+   * The node's wire port over TCP, or its **HTTP** port over a WebSocket — the
+   * route `GET /wire` lives on the HTTP surface.
+   */
   port: number;
   user?: string;
   password?: string;
   /** Milliseconds to wait for the socket and the greeting. */
   timeout?: number;
+  /**
+   * How the bytes travel. `'tcp'` reaches the wire port and is the default in
+   * Node.js; `'websocket'` reaches `GET /wire` on the HTTP port and is the only
+   * one a browser has. The protocol, the session and every answer are the same.
+   */
+  transport?: 'tcp' | 'websocket';
+  /**
+   * `wss://` rather than `ws://` — a node behind a TLS-terminating proxy. The
+   * node serves no TLS itself. WebSocket only.
+   */
+  secure?: boolean;
 }
 
 /**
@@ -84,9 +99,14 @@ export class Connection {
     return this.#peerMinor;
   }
 
-  static async open(options: ConnectOptions): Promise<Connection> {
-    const socket = await dial(options);
-    const stream = new FrameStream(socket);
+  /**
+   * Greet a node over `carrier` and hold the session that follows.
+   *
+   * `connect()` is the usual way in; this is the seam it uses, open for a caller
+   * that brings its own carrier.
+   */
+  static async over(carrier: Carrier, options: ConnectOptions): Promise<Connection> {
+    const stream = new FrameStream(carrier);
     await stream.write(greeting());
 
     // The magic is judged on its own four bytes, before the version bytes are
@@ -222,29 +242,4 @@ export class Connection {
   close(): void {
     this.#stream.close();
   }
-}
-
-function dial(options: ConnectOptions): Promise<Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = new Socket();
-    const timeout = options.timeout ?? 10_000;
-    const fail = (why: string): void => {
-      socket.destroy();
-      reject(new IoError(`could not reach ${options.host}:${options.port} — ${why}`));
-    };
-    socket.setTimeout(timeout, () => fail(`no answer within ${timeout} ms`));
-    socket.once('error', (why) => fail(why.message));
-    socket.connect(options.port, options.host, () => {
-      socket.setTimeout(0);
-      socket.removeAllListeners('error');
-      // Statements are small and answers are awaited; Nagle only adds latency here.
-      socket.setNoDelay(true);
-      resolve(socket);
-    });
-  });
-}
-
-/** Open a connection and exchange greetings. */
-export function connect(options: ConnectOptions): Promise<Connection> {
-  return Connection.open(options);
 }

@@ -20,9 +20,15 @@ import type { Outcome, Value } from '../src/index.ts';
  */
 const target = process.env['TESSARIDB_TEST_NODE'];
 
-function address(): { host: string; port: number } {
+/**
+ * `TESSARIDB_TEST_TRANSPORT=websocket` runs the same tests over `GET /wire`, with
+ * `TESSARIDB_TEST_NODE` naming the node's HTTP port instead of its wire port.
+ */
+function address(): { host: string; port: number; transport: 'tcp' | 'websocket' } {
   const [host, port] = (target ?? '').split(':');
-  return { host: host ?? '127.0.0.1', port: Number(port ?? 0) };
+  const transport =
+    process.env['TESSARIDB_TEST_TRANSPORT'] === 'websocket' ? 'websocket' : 'tcp';
+  return { host: host ?? '127.0.0.1', port: Number(port ?? 0), transport };
 }
 
 const live = test.skip;

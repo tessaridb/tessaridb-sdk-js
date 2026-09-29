@@ -21,7 +21,6 @@
  * on the first authenticated call and presents the token thereafter.
  */
 
-import { Buffer } from 'node:buffer';
 import { ProtocolError, RefusalError } from '../error.ts';
 import { readAnswerBody, type HttpOutcome } from './answer.ts';
 import { type JsonValue, parseJson } from './json.ts';
@@ -347,7 +346,12 @@ export class HttpClient {
 
   #basic(): string {
     const { user, password } = this.#credentials!;
-    return `Basic ${Buffer.from(`${user}:${password}`, 'utf8').toString('base64')}`;
+    // Base64 of the UTF-8 bytes, spelled with what a browser has too.
+    let binary = '';
+    for (const byte of new TextEncoder().encode(`${user}:${password}`)) {
+      binary += String.fromCharCode(byte);
+    }
+    return `Basic ${btoa(binary)}`;
   }
 
   async #send(path: string, init: RequestInit, mayRetry = true): Promise<Response> {
