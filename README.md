@@ -149,7 +149,8 @@ keyed by the topic, the group and `message.position`. The group, not the
 connection, holds the state, so a restarted process carries on where the group
 stands, and the group is declared in the store rather than by the consumer. The
 behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
-follows.
+follows, and the statements it sends are checked against all 14 cases of
+`conformance/consumer-v1.json`.
 
 ## Objects, files and health
 
@@ -191,6 +192,28 @@ is the number 3 and `{"x":"hello"}` is a `400`. Passing a caller's string throug
 would be a type-confusion hazard that no test written against it would show, so
 this client does not build the bridge: a statement with a value in it goes over
 the wire, where a parameter is an encoded value and none of this arises.
+
+**A batch of events goes to a series in one transaction** (node `0.14.0-beta`,
+§5.9). `append` takes `object` values, renders them as TessariQL source — the one
+place this client does, because the route reads nothing else — and answers how
+many landed:
+
+```ts
+const landed = await node.append('acme', 'metrics', 'readings', [
+  {
+    kind: 'object',
+    fields: new Map([
+      ['sensor', { kind: 'string', value: 's1' }],
+      ['at', { kind: 'datetime', seconds: 1_790_676_000n, nanos: 0 }],
+    ]),
+  },
+]);
+```
+
+The batch lands whole or not at all, and it is sent **once**: it is not idempotent,
+so a transport failure after the request left is the caller's to judge. A kind an
+event cannot carry — bytes, a range, a non-finite float — throws `NotAnEventError`
+before anything is sent.
 
 **A `404` is an answer.** A file that is not there reads as `undefined`, and a
 file that exists and is empty reads as zero bytes — these are different facts and

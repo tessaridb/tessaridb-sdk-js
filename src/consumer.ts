@@ -81,22 +81,23 @@ function message(body: Value): Message {
   };
 }
 
-/** A member of a consumer group, reading one topic over one connection. */
-export class Consumer {
-  readonly #connection: Connection;
+/**
+ * The statements a consumer sends (§2), rendered in one place.
+ *
+ * The consumer builds its text through nothing else, so the shared corpus
+ * (`consumer-v1.json`) checking this class checks what actually goes out. Names
+ * are checked here, once, before anything is sent (§3). Not re-exported from
+ * the package: it is how the consumer speaks, not something a caller uses.
+ */
+export class ConsumerStatements {
   /** Sent with every statement: a reconnected connection has forgotten any earlier USE (§5). */
   readonly #tenancy: string;
   readonly #topic: string;
   readonly #group: string;
-  readonly #batch: number;
-  #stopped = false;
-  #wake: (() => void) | undefined;
 
-  /**
-   * The connection should already carry its credentials when the store is
-   * closed: a wire connection proves who it is once and keeps that identity.
-   */
-  constructor(connection: Connection, options: ConsumerOptions) {
+  constructor(
+    options: Pick<ConsumerOptions, 'namespace' | 'database' | 'topic' | 'group'>,
+  ) {
     for (const [position, name] of [
       ['a namespace', options.namespace],
       ['a database', options.database],
@@ -109,10 +110,59 @@ export class Consumer {
     if (!GROUP.test(options.group)) {
       throw new ConsumerNameError('a group', options.group);
     }
-    this.#connection = connection;
     this.#tenancy = `USE NAMESPACE ${options.namespace}; USE DATABASE ${options.database}; `;
     this.#topic = options.topic;
     this.#group = options.group;
+  }
+
+  read(limit: number): string {
+    return `${this.#tenancy}READ FROM ${this.#topic} FOR CONSUMER '${this.#group}' LIMIT ${limit};`;
+  }
+
+  ack(positions: readonly bigint[]): [string, Map<string, Value>] {
+    return this.#settle('ACK', positions, '');
+  }
+
+  nack(positions: readonly bigint[], delayMs?: number): [string, Map<string, Value>] {
+    // A delay is a duration literal in the grammar, not a parameter, written from
+    // a number formatted here and never from a caller's text.
+    const millis = Math.trunc(delayMs ?? 0);
+    const tail = millis > 0 ? ` DELAY ${millis}ms` : '';
+    return this.#settle('NACK', positions, tail);
+  }
+
+  #settle(
+    verb: string,
+    positions: readonly bigint[],
+    tail: string,
+  ): [string, Map<string, Value>] {
+    const parameters = new Map<string, Value>();
+    const references = positions.map((position, index) => {
+      parameters.set(`p${index}`, { kind: 'integer', value: position });
+      return `$p${index}`;
+    });
+    return [
+      `${this.#tenancy}${verb} ${this.#topic} FOR CONSUMER '${this.#group}' AT ${references.join(', ')}${tail};`,
+      parameters,
+    ];
+  }
+}
+
+/** A member of a consumer group, reading one topic over one connection. */
+export class Consumer {
+  readonly #connection: Connection;
+  readonly #statements: ConsumerStatements;
+  readonly #batch: number;
+  #stopped = false;
+  #wake: (() => void) | undefined;
+
+  /**
+   * The connection should already carry its credentials when the store is
+   * closed: a wire connection proves who it is once and keeps that identity.
+   */
+  constructor(connection: Connection, options: ConsumerOptions) {
+    this.#statements = new ConsumerStatements(options);
+    this.#connection = connection;
     this.#batch = Math.max(1, Math.trunc(options.batch ?? 10));
   }
 
@@ -169,43 +219,20 @@ export class Consumer {
 
   /** Acknowledge these positions; resolves to how many were in flight. One that was not counts nothing. */
   ack(positions: readonly bigint[]): Promise<bigint> {
-    return this.#settle(
-      `ACK ${this.#topic} FOR CONSUMER '${this.#group}' AT `,
-      positions,
-      '',
-    );
+    return positions.length === 0
+      ? Promise.resolve(0n)
+      : this.#settle(...this.#statements.ack(positions));
   }
 
   /** Hand these positions back, now or after `delayMs`; resolves to how many were in flight. */
   nack(positions: readonly bigint[], delayMs?: number): Promise<bigint> {
-    // A delay is a duration literal in the grammar, not a parameter, written from
-    // a number formatted here and never from a caller's text.
-    const millis = Math.trunc(delayMs ?? 0);
-    const tail = millis > 0 ? ` DELAY ${millis}ms` : '';
-    return this.#settle(
-      `NACK ${this.#topic} FOR CONSUMER '${this.#group}' AT `,
-      positions,
-      tail,
-    );
+    return positions.length === 0
+      ? Promise.resolve(0n)
+      : this.#settle(...this.#statements.nack(positions, delayMs));
   }
 
-  async #settle(
-    statement: string,
-    positions: readonly bigint[],
-    tail: string,
-  ): Promise<bigint> {
-    if (positions.length === 0) {
-      return 0n;
-    }
-    const parameters = new Map<string, Value>();
-    const references = positions.map((position, index) => {
-      parameters.set(`p${index}`, { kind: 'integer', value: position });
-      return `$p${index}`;
-    });
-    const reply = await this.#connection.execute(
-      `${this.#tenancy}${statement}${references.join(', ')}${tail};`,
-      parameters,
-    );
+  async #settle(script: string, parameters: Map<string, Value>): Promise<bigint> {
+    const reply = await this.#connection.execute(script, parameters);
     const answered = reply.kind === 'answer' ? reply.outcomes.at(-1) : undefined;
     if (answered?.kind !== 'value') {
       throw new TypeError(
@@ -219,9 +246,7 @@ export class Consumer {
   async #next(): Promise<Message[] | undefined> {
     let wait = FIRST_WAIT;
     while (!this.#stopped) {
-      const reply = await this.#connection.execute(
-        `${this.#tenancy}READ FROM ${this.#topic} FOR CONSUMER '${this.#group}' LIMIT ${this.#batch};`,
-      );
+      const reply = await this.#connection.execute(this.#statements.read(this.#batch));
       const answered = reply.kind === 'answer' ? reply.outcomes.at(-1) : undefined;
       if (answered?.kind !== 'records') {
         throw new TypeError(`a group read answered ${answered?.kind ?? reply.kind}`);

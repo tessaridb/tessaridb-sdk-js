@@ -25,6 +25,8 @@ import { Buffer } from 'node:buffer';
 import { ProtocolError, RefusalError } from '../error.ts';
 import { readAnswerBody, type HttpOutcome } from './answer.ts';
 import { type JsonValue, parseJson } from './json.ts';
+import { batch } from './events.ts';
+import type { Value } from '../value.ts';
 
 /** A node's answer to `/health` or `/ready`. Three shapes, three field sets. */
 export type Health =
@@ -207,6 +209,37 @@ export class HttpClient {
       body: source,
     });
     return readAnswerBody(await this.#body(response));
+  }
+
+  /**
+   * Appends a batch of events to a series in ONE transaction, and answers how
+   * many landed (§5.9). Every event is an `object` value.
+   *
+   * The batch lands whole or not at all, and it is **not** idempotent: sent
+   * twice it lands twice. So it is sent once — a transport failure after the
+   * request left may mean it landed, and only the caller knows whether a second
+   * copy would be harmless. The one resend is after a `401` on a lapsed token,
+   * which the node answers before running anything. `NotAnEventError` is thrown
+   * before anything is sent.
+   */
+  async append(
+    ns: string,
+    db: string,
+    series: string,
+    events: readonly Value[],
+  ): Promise<number> {
+    const body = batch(events);
+    const path = `/series/${segment(ns, 'a namespace')}/${segment(db, 'a database')}/${segment(series, 'a series')}`;
+    const response = await this.#send(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body,
+    });
+    const answer = this.#object(await this.#body(response), 'an append');
+    const appended = answer['appended'];
+    if (typeof appended !== 'number')
+      throw new ProtocolError('an append must say how many landed');
+    return appended;
   }
 
   /** The whole log, in one response. There is no resumption and no range support. */
