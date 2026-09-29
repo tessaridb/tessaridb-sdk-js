@@ -28,6 +28,8 @@
  */
 
 export { connect, Connection } from './connection.ts';
+export { Consumer, ConsumerNameError } from './consumer.ts';
+export type { ConsumerOptions, Message, Settle } from './consumer.ts';
 export type { ConnectOptions, Reply } from './connection.ts';
 export { encodeValue, writeValue } from './codec/encode.ts';
 export { decodeValue, readValue } from './codec/decode.ts';
