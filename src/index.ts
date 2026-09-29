@@ -87,4 +87,5 @@ export { readGeometry, GeoJsonError } from './http/geojson.ts';
 export { readAnswerBody, readOutcome } from './http/answer.ts';
 export type { HttpOutcome, Plan, Row } from './http/answer.ts';
 export { HttpClient, HttpError, ElsewhereError } from './http/client.ts';
+export { NotAnEventError } from './http/events.ts';
 export type { FileEntry, Health, HttpOptions } from './http/client.ts';

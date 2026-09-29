@@ -193,6 +193,28 @@ would be a type-confusion hazard that no test written against it would show, so
 this client does not build the bridge: a statement with a value in it goes over
 the wire, where a parameter is an encoded value and none of this arises.
 
+**A batch of events goes to a series in one transaction** (node `0.14.0-beta`,
+§5.9). `append` takes `object` values, renders them as TessariQL source — the one
+place this client does, because the route reads nothing else — and answers how
+many landed:
+
+```ts
+const landed = await node.append('acme', 'metrics', 'readings', [
+  {
+    kind: 'object',
+    fields: new Map([
+      ['sensor', { kind: 'string', value: 's1' }],
+      ['at', { kind: 'datetime', seconds: 1_790_676_000n, nanos: 0 }],
+    ]),
+  },
+]);
+```
+
+The batch lands whole or not at all, and it is sent **once**: it is not idempotent,
+so a transport failure after the request left is the caller's to judge. A kind an
+event cannot carry — bytes, a range, a non-finite float — throws `NotAnEventError`
+before anything is sent.
+
 **A `404` is an answer.** A file that is not there reads as `undefined`, and a
 file that exists and is empty reads as zero bytes — these are different facts and
 the server draws the line, so this client does not erase it. A listing that comes

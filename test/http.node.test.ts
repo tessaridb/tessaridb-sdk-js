@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { HttpClient } from '../src/index.ts';
-import type { HttpOutcome } from '../src/index.ts';
+import { HttpClient, RefusalError } from '../src/index.ts';
+import type { HttpOutcome, Value } from '../src/index.ts';
 
 /**
  * The HTTP surface against a running node.
@@ -318,6 +318,56 @@ signedIn(
     await assert.rejects(
       () => node.script('RETURN 1;'),
       (error: Error & { status?: number }) => error.status === 401,
+    );
+  },
+);
+
+runs(
+  'a batch of events lands whole in event-time order, or not at all (§5.9)',
+  async () => {
+    // The node is the oracle for the rendering: a value this client spelled wrongly
+    // fails the batch or comes back different.
+    const node = client();
+    await node.script(
+      `${USE} DEFINE SERIES IF NOT EXISTS readings RETAIN 36500d TIME at;`,
+    );
+    const run = Math.random().toString(16).slice(2);
+    const event = (second: number, sensor: string): Value => ({
+      kind: 'object',
+      fields: new Map<string, Value>([
+        ['run', { kind: 'string', value: run }],
+        ['sensor', { kind: 'string', value: sensor }],
+        ['v', { kind: 'float', value: 1.5e300 }],
+        ['note', { kind: 'string', value: "it's \\ fine" }],
+        ['at', { kind: 'datetime', seconds: BigInt(1_790_676_000 + second), nanos: 0 }],
+      ]),
+    });
+
+    assert.equal(
+      await node.append(NS, DB, 'readings', [event(2, 'b'), event(1, 'a')]),
+      2,
+    );
+    await assert.rejects(
+      node.append(NS, DB, 'readings', [
+        event(3, 'c'),
+        { kind: 'object', fields: new Map() },
+      ]),
+      RefusalError,
+    );
+
+    const outcomes = await node.script(
+      `${USE} SELECT sensor, note FROM readings WHERE run = '${run}';`,
+    );
+    const records = outcomes.find((o) => o.kind === 'records') as Extract<
+      HttpOutcome,
+      { kind: 'records' }
+    >;
+    assert.deepEqual(
+      records.records.map((row) => row.value),
+      [
+        { sensor: 'a', note: "it's \\ fine" },
+        { sensor: 'b', note: "it's \\ fine" },
+      ],
     );
   },
 );
