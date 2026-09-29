@@ -8,6 +8,8 @@
 export { Connection } from './connection.ts';
 export type { Carrier } from './wire/carrier.ts';
 export { wireUrl } from './wire/websocket.ts';
+export { Cache, CacheArgumentError, CacheStatements, Lease } from './cache.ts';
+export type { Ttl } from './cache.ts';
 export { Consumer, ConsumerNameError } from './consumer.ts';
 export type { ConsumerOptions, Message, Settle } from './consumer.ts';
 export type { ConnectOptions, Reply } from './connection.ts';

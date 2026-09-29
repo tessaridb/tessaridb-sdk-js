@@ -153,6 +153,44 @@ behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
 follows, and the statements it sends are checked against all 14 cases of
 `conformance/consumer-v1.json`.
 
+## A space as a cache, a counter and a lock
+
+A space (`DEFINE SPACE`) keeps one value per key with an optional expiry.
+`Cache` makes each use one call over a connection you hold — over TCP, or over a
+WebSocket in a browser. A ttl is milliseconds:
+
+```ts
+import { Cache, connect } from '@tessaridb/client';
+
+const connection = await connect({ host: '127.0.0.1', port: 9080 });
+const cache = new Cache(connection, {
+  namespace: 'app',
+  database: 'main',
+  space: 'cache',
+});
+
+await cache.set('session:abc', { kind: 'string', value: 'ada' }, { ttlMs: 1_800_000 });
+const page = await cache.getOrSet('page:/', 60_000, () => ({
+  kind: 'string',
+  value: '<html>…',
+}));
+const hits = await cache.incr('hits');
+
+const lease = await cache.lock('nightly-report', 30_000);
+if (lease) {
+  // … work, calling lease.extend() before 30 s pass
+  await lease.release();
+}
+```
+
+Two rules the class is built around: **a plain `set` clears an expiry the key
+had** — pass `ttlMs` on every write that must keep one — and **a lock is a
+lease, not a mutex**: past its ttl another holder may take it. `release` is an
+expiring conditional write, never a delete, so a lease that lapsed cannot remove
+the next holder's lock. `ttl()` keeps the store's two absences apart:
+`expires`, `never` or `absent`. The statements are the protocol repository's
+`spec/cache-v1.md`, which every client follows.
+
 ## Objects, files and health
 
 Everything the wire protocol does not serve is here, and it is a different client
