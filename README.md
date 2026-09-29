@@ -149,7 +149,8 @@ keyed by the topic, the group and `message.position`. The group, not the
 connection, holds the state, so a restarted process carries on where the group
 stands, and the group is declared in the store rather than by the consumer. The
 behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
-follows.
+follows, and the statements it sends are checked against all 14 cases of
+`conformance/consumer-v1.json`.
 
 ## Objects, files and health
 
