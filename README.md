@@ -114,6 +114,43 @@ parameter numbering. That is what the corpus checks, and this client additionall
 executes every rendered case against a running node — the only check that reaches
 the parser.
 
+## Consuming a topic
+
+A topic's consumer group (`DEFINE GROUP`, engine `0.12.0-beta` or later) hands
+each message to one member and forgets it only when it is acknowledged.
+`Consumer` reads under a group and calls your function once per message, in
+order:
+
+```ts
+import { connect, Consumer } from '@tessaridb/client';
+
+const connection = await connect({ host: '127.0.0.1', port: 9080 });
+const consumer = new Consumer(connection, {
+  namespace: 'app',
+  database: 'main',
+  topic: 'jobs',
+  group: 'workers',
+});
+
+// Automatic: resolving acknowledges the message, throwing hands it back at once.
+await consumer.runAuto(async (message) => {
+  console.log(message.position, message.deliveries, message.value);
+});
+
+// Manual: resolve to { kind: 'ack' }, { kind: 'nack', delayMs: 5000 } or
+// { kind: 'leave' } for the group's deadline to hand it out again.
+await consumer.runManual(async () => ({ kind: 'ack' }));
+
+consumer.stop(); // from anywhere: the running handler finishes, then the loop ends
+```
+
+Both modes are **at least once**: make an effect outside the store idempotent,
+keyed by the topic, the group and `message.position`. The group, not the
+connection, holds the state, so a restarted process carries on where the group
+stands, and the group is declared in the store rather than by the consumer. The
+behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
+follows.
+
 ## Objects, files and health
 
 Everything the wire protocol does not serve is here, and it is a different client
