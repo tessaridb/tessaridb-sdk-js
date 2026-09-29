@@ -17,75 +17,20 @@
  * work, reach everything, and silently narrow every result — JSON carries six
  * types — and nothing at the call site would show what was lost.
  *
- * That is also why this package does not ship a browser build: a browser cannot
- * open a TCP socket, so a browser client could only be the HTTP half, which means
- * shipping the narrowing.
+ * ## In a browser
+ *
+ * A browser cannot open a TCP socket, so the same wire protocol also travels
+ * over a WebSocket to the node's HTTP port at `GET /wire` — the same frames and
+ * the same seventeen types, not the HTTP half and its narrowing. Pass
+ * `transport: 'websocket'`, or import `@tessaridb/client/browser`, whose
+ * `connect` has no other transport.
  *
  * ## There is no TLS on the wire protocol
  *
  * Credentials travel as given. Run this on a protected network, or behind
- * something that terminates TLS.
+ * something that terminates TLS — which, for a page served over `https://`, is
+ * also what makes `wss://` (`secure: true`) possible at all.
  */
 
-export { connect, Connection } from './connection.ts';
-export { Consumer, ConsumerNameError } from './consumer.ts';
-export type { ConsumerOptions, Message, Settle } from './consumer.ts';
-export type { ConnectOptions, Reply } from './connection.ts';
-export { encodeValue, writeValue } from './codec/encode.ts';
-export { decodeValue, readValue } from './codec/decode.ts';
-export { ByteReader, ByteWriter } from './codec/bytes.ts';
-export { HandshakeError, ProtocolError, RefusalError } from './error.ts';
-export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';
-export { CEILING, FRAME, TooLargeError, UnknownFrameError } from './wire/frame.ts';
-export { readAnswer } from './wire/outcome.ts';
-export type {
-  AccessPath,
-  Exactness,
-  Note,
-  Outcome,
-  RecordRow,
-  Suggestion,
-} from './wire/outcome.ts';
-export type {
-  Change,
-  Credentials,
-  Elsewhere,
-  Fate,
-  Settlement,
-} from './wire/message.ts';
-export type {
-  Bound,
-  Geometry,
-  Polygon,
-  Position,
-  RecordId,
-  Ring,
-  Value,
-} from './value.ts';
-export {
-  CreateInTable,
-  CreateRecord,
-  DeleteRecord,
-  Select,
-  UpdateRecord,
-  createInTable,
-  createRecord,
-  deleteRecord,
-  select,
-  updateRecord,
-} from './query/statement.ts';
-export type { Direction } from './query/statement.ts';
-export { and, compare, or } from './query/filter.ts';
-export type { Filter, Operator } from './query/filter.ts';
-export { BuilderError } from './query/grammar.ts';
-export type { NamePosition, RefusalReason, Rendered } from './query/grammar.ts';
-export { parseJson, JsonError } from './http/json.ts';
-export type { JsonValue } from './http/json.ts';
-export { interpret, InterpretError } from './http/interpret.ts';
-export type { Names, Shape } from './http/interpret.ts';
-export { readGeometry, GeoJsonError } from './http/geojson.ts';
-export { readAnswerBody, readOutcome } from './http/answer.ts';
-export type { HttpOutcome, Plan, Row } from './http/answer.ts';
-export { HttpClient, HttpError, ElsewhereError } from './http/client.ts';
-export { NotAnEventError } from './http/events.ts';
-export type { FileEntry, Health, HttpOptions } from './http/client.ts';
+export * from './portable.ts';
+export { connect } from './connect.ts';

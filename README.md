@@ -38,6 +38,7 @@ reported so a caller can decline to send what an older node cannot read.
 | query builder                                      | **done**, 38/38 corpus, 26 executed by a node |
 | HTTP surface — objects, files, backup, health      | **done**, exercised against a running node    |
 | session token — §5.8                               | **done**, open once, `Bearer` thereafter      |
+| wire over a WebSocket (`GET /wire`) — browsers     | **done**, live suite on both transports       |
 | `/watch`, `/metrics`, `POST /password`             | not yet                                       |
 
 `HEAD` on the file routes is **deliberately** not offered rather than pending. The
@@ -152,6 +153,44 @@ behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
 follows, and the statements it sends are checked against all 14 cases of
 `conformance/consumer-v1.json`.
 
+## A space as a cache, a counter and a lock
+
+A space (`DEFINE SPACE`) keeps one value per key with an optional expiry.
+`Cache` makes each use one call over a connection you hold — over TCP, or over a
+WebSocket in a browser. A ttl is milliseconds:
+
+```ts
+import { Cache, connect } from '@tessaridb/client';
+
+const connection = await connect({ host: '127.0.0.1', port: 9080 });
+const cache = new Cache(connection, {
+  namespace: 'app',
+  database: 'main',
+  space: 'cache',
+});
+
+await cache.set('session:abc', { kind: 'string', value: 'ada' }, { ttlMs: 1_800_000 });
+const page = await cache.getOrSet('page:/', 60_000, () => ({
+  kind: 'string',
+  value: '<html>…',
+}));
+const hits = await cache.incr('hits');
+
+const lease = await cache.lock('nightly-report', 30_000);
+if (lease) {
+  // … work, calling lease.extend() before 30 s pass
+  await lease.release();
+}
+```
+
+Two rules the class is built around: **a plain `set` clears an expiry the key
+had** — pass `ttlMs` on every write that must keep one — and **a lock is a
+lease, not a mutex**: past its ttl another holder may take it. `release` is an
+expiring conditional write, never a delete, so a lease that lapsed cannot remove
+the next holder's lock. `ttl()` keeps the store's two absences apart:
+`expires`, `never` or `absent`. The statements are the protocol repository's
+`spec/cache-v1.md`, which every client follows.
+
 ## Objects, files and health
 
 Everything the wire protocol does not serve is here, and it is a different client
@@ -233,15 +272,44 @@ work, reach every route, and silently narrow every result — JSON carries six t
 against the store's seventeen — and nothing at the call site would show what was
 lost.
 
-## Why there is no browser build
+## In a browser
 
-A browser cannot open a TCP socket, so a browser build could only ever be the HTTP
-half — which means shipping the narrowing described above as though it were the
-client. If you need database access from a browser, put a server in front of it;
-that server is also where your credentials belong.
+A browser cannot open a TCP socket, so the node also carries the **same wire
+protocol** over a WebSocket on its HTTP port, at `GET /wire` (node `0.15.0-beta`
+and later). Same frames, same seventeen types, same session — not the HTTP half
+and its narrowing.
+
+```ts
+import { connect } from '@tessaridb/client/browser';
+
+// The HTTP port, not the wire port.
+const connection = await connect({ host: 'db.example', port: 443, secure: true });
+await connection.execute('USE NAMESPACE app; USE DATABASE main;');
+```
+
+In Node.js the same transport is `connect({ ..., transport: 'websocket' })`; the
+default stays TCP. A bundler that honours the `browser` export condition picks the
+browser entry from `@tessaridb/client` on its own. The browser entry imports no
+Node.js module by any path, and a test walks its import graph to keep it so.
+
+Three things to know first:
+
+- **Credentials go in `connect`, never in a cookie.** The node ignores a browser's
+  `Authorization` header and cookies on this route, deliberately: a browser
+  attaches both to a WebSocket from _any_ page, so honouring them would let any
+  page act as the user. A store with no users declared is open here as it is
+  everywhere.
+- **`secure: true` needs a TLS-terminating proxy** in front of the HTTP port. The
+  node serves no TLS, and a page loaded over `https://` cannot open `ws://` at all.
+- **A browser cannot stop reading.** Over TCP a subscriber that stops consuming
+  fills its socket and the node drops it after 30 seconds; a browser's `WebSocket`
+  keeps accepting, so unconsumed changes pile up in the page's memory. Consume
+  what you subscribe to.
+
+`test/browser/wire.html` is the manual check that runs this in a real browser.
 
 This package runs on Node.js 22+ and on the runtimes that implement `node:net`,
-which today are Deno and Bun.
+which today are Deno and Bun, and in any browser with `WebSocket`.
 
 **22 and not 20, for one reason.** A record identity is an `i64`, and
 `JSON.parse` reads every number as a double — so an id past 2^53 comes back
@@ -298,6 +366,8 @@ only check that does:
 
 ```
 TESSARIDB_TEST_NODE=127.0.0.1:47915 npm test
+# the same tests over GET /wire — the node's HTTP port
+TESSARIDB_TEST_TRANSPORT=websocket TESSARIDB_TEST_NODE=127.0.0.1:47916 npm test
 ```
 
 Those tests are opt-in and skip loudly when the variable is unset; a suite that

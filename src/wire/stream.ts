@@ -1,4 +1,4 @@
-import { Socket } from 'node:net';
+import type { Carrier } from './carrier.ts';
 import { CEILING, HEADER_BYTES, TooLargeError, UnknownFrameError } from './frame.ts';
 
 /** The stream ended mid-frame. Retry the transport. */
@@ -17,7 +17,7 @@ export interface Frame {
 }
 
 /**
- * A framed reader over a socket.
+ * A framed reader over a carrier — a TCP socket or a WebSocket, the same bytes.
  *
  * The distinction it exists to keep is between reading zero bytes **between**
  * frames, which is a clean goodbye, and reading zero bytes **inside** a header or
@@ -25,31 +25,23 @@ export interface Frame {
  * hung up mid-answer look like one that finished.
  */
 export class FrameStream {
-  #socket: Socket;
-  #chunks: AsyncIterator<Buffer>;
+  #carrier: Carrier;
   #held: Uint8Array;
   #ended: boolean;
 
-  constructor(socket: Socket) {
-    this.#socket = socket;
-    this.#chunks = socket[Symbol.asyncIterator]();
+  constructor(carrier: Carrier) {
+    this.#carrier = carrier;
     this.#held = new Uint8Array(0);
     this.#ended = false;
   }
 
   async #pull(): Promise<boolean> {
     if (this.#ended) return false;
-    let next;
-    try {
-      next = await this.#chunks.next();
-    } catch (why) {
-      throw new IoError(`the socket failed while reading: ${String(why)}`);
-    }
-    if (next.done) {
+    const chunk = await this.#carrier.read();
+    if (chunk === null) {
       this.#ended = true;
       return false;
     }
-    const chunk = new Uint8Array(next.value);
     const grown = new Uint8Array(this.#held.length + chunk.length);
     grown.set(this.#held);
     grown.set(chunk, this.#held.length);
@@ -106,16 +98,10 @@ export class FrameStream {
   }
 
   write(bytes: Uint8Array): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.#socket.write(bytes, (why) =>
-        why
-          ? reject(new IoError(`the socket failed while writing: ${why.message}`))
-          : resolve(),
-      );
-    });
+    return this.#carrier.write(bytes);
   }
 
   close(): void {
-    this.#socket.destroy();
+    this.#carrier.close();
   }
 }

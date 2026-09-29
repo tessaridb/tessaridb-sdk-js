@@ -1,0 +1,85 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>@tessaridb/client in a browser</title>
+<!--
+  A manual check that the browser entry works in a real browser (G045 C4).
+
+  1. `npm run build`
+  2. serve the repository root: `python3 -m http.server 47920`
+  3. start a node from `dev`: `tessaridb --serve 127.0.0.1:47915 --http 127.0.0.1:47916`
+  4. open http://127.0.0.1:47920/test/browser/wire.html?port=47916
+
+  The page writes its verdict into #verdict: `pass` with the values it read back,
+  or `fail` with the error.
+-->
+<pre id="verdict">running</pre>
+<script type="module">
+  import { connect } from '../../dist/browser.js';
+
+  const port = Number(new URLSearchParams(location.search).get('port') ?? 47916);
+  const out = document.getElementById('verdict');
+  const shown = (value) =>
+    JSON.stringify(value, (_, v) =>
+      typeof v === 'bigint' ? `${v}n` : v instanceof Uint8Array ? [...v] : v,
+    );
+
+  // Earlier runs wrote `kinds:1` too, and the feed reads the log from its start,
+  // so this run's write is told apart by a token only it carries.
+  const token = crypto.randomUUID();
+  try {
+    const setup = await connect({ host: '127.0.0.1', port });
+    await setup.execute(
+      'DEFINE NAMESPACE IF NOT EXISTS browser; USE NAMESPACE browser; ' +
+        'DEFINE DATABASE IF NOT EXISTS page; USE DATABASE page; ' +
+        'DEFINE COLLECTION IF NOT EXISTS kinds; DEFINE COLLECTION IF NOT EXISTS users; ' +
+        'DELETE kinds:1;',
+    );
+
+    const watcher = await connect({ host: '127.0.0.1', port });
+    await watcher.execute('USE NAMESPACE browser; USE DATABASE page;');
+    // From the start of the log, so earlier changes to `kinds` come first; the
+    // one this page waits for is the write below.
+    const changes = watcher.changes({ table: 'kinds' });
+    const written = (async () => {
+      for await (const change of changes) {
+        const run =
+          change.value?.kind === 'object' ? change.value.fields.get('run') : undefined;
+        if (change.fate === 'written' && run?.kind === 'string' && run.value === token)
+          return change;
+      }
+      throw new Error('the subscription ended without the write');
+    })();
+
+    await setup.execute(
+      "CREATE kinds:1 = { at: datetime '2026-09-30T10:00:00Z', price: dec 12.34, " +
+        `blob: 0x0a1b, owner: users:'ada', run: '${token}' };`,
+    );
+    const reply = await setup.execute('SELECT * FROM kinds:1;');
+    const row = reply.kind === 'answer' ? reply.outcomes[0]?.records?.[0] : undefined;
+    const kinds = row
+      ? Object.fromEntries([...row.value.fields].map(([k, v]) => [k, v.kind]))
+      : {};
+
+    const change = await Promise.race([
+      written,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('no change in 5 s')), 5000),
+      ),
+    ]);
+
+    const expected = {
+      at: 'datetime',
+      price: 'decimal',
+      blob: 'bytes',
+      owner: 'record',
+    };
+    const ok =
+      Object.entries(expected).every(([k, v]) => kinds[k] === v) &&
+      change.value?.kind === 'object';
+    out.textContent = `${ok ? 'pass' : 'fail'} ${shown({ kinds, change: { sequence: change.sequence, table: change.table, identity: change.identity, fate: change.fate } })}`;
+    setup.close();
+    watcher.close();
+  } catch (why) {
+    out.textContent = `fail ${why?.name}: ${why?.message}`;
+  }
+</script>

@@ -1,6 +1,6 @@
 {
   "name": "@tessaridb/client",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Client for TessariDB — the binary wire protocol for statements and change subscriptions, HTTP for objects, files, backup and operations",
   "license": "Apache-2.0",
   "publishConfig": {
@@ -28,7 +28,12 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "browser": "./dist/browser.js",
       "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
     }
   },
   "files": [
