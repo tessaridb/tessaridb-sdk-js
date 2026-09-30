@@ -11,12 +11,28 @@ export { wireUrl } from './wire/websocket.ts';
 export { Cache, CacheArgumentError, CacheStatements, Lease } from './cache.ts';
 export type { Ttl } from './cache.ts';
 export { Consumer, ConsumerNameError } from './consumer.ts';
+export {
+  Vault,
+  changePassphrase,
+  seal,
+  unseal,
+  vaultAudit,
+  vaultStatus,
+} from './vault.ts';
+export type { Page } from './vault.ts';
+export { VaultArgumentError, VaultStatements } from './vault/statements.ts';
+export type { Custody, SealState, VaultStatus } from './vault/frame.ts';
 export type { ConsumerOptions, Message, Settle } from './consumer.ts';
 export type { ConnectOptions, Reply } from './connection.ts';
 export { encodeValue, writeValue } from './codec/encode.ts';
 export { decodeValue, readValue } from './codec/decode.ts';
 export { ByteReader, ByteWriter } from './codec/bytes.ts';
-export { HandshakeError, ProtocolError, RefusalError } from './error.ts';
+export {
+  HandshakeError,
+  NodeTooOldError,
+  ProtocolError,
+  RefusalError,
+} from './error.ts';
 export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';
 export { CEILING, FRAME, TooLargeError, UnknownFrameError } from './wire/frame.ts';
 export { readAnswer } from './wire/outcome.ts';
