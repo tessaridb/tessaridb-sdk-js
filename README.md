@@ -191,6 +191,35 @@ the next holder's lock. `ttl()` keeps the store's two absences apart:
 `expires`, `never` or `absent`. The statements are the protocol repository's
 `spec/cache-v1.md`, which every client follows.
 
+## A vault, and its passphrase
+
+A vault (`DEFINE VAULT`) keeps `SECRET` fields encrypted in every copy that is not a
+running, unsealed node. The passphrase goes in a frame of its own, never in a
+statement, and is in no error this package raises:
+
+```ts
+import { Vault, connect, unseal } from '@tessaridb/client';
+
+const conn = await connect({ host: '127.0.0.1', port: 9080 });
+await unseal(conn, storePassphrase); // the store's key, for ten minutes
+
+const vault = new Vault(conn, 'app', 'main', 'team');
+await vault.write(
+  'github',
+  new Map([['password', { kind: 'string', value: 'hunter2' }]]),
+);
+const page = await vault.list({ limit: 100 }); // ids only, never a value
+const secret = await vault.reveal('github', ['password']);
+```
+
+A vault declared `DEFINE VAULT team PASSPHRASE '…'` opens with its own passphrase
+instead, and the store's opens nothing in it: `vault.status()`, `vault.unseal(…)`,
+`vault.seal()` and `vault.changePassphrase(…)` act on that vault alone, and
+`status().custody` says which kind a vault is. An unseal lasts the node's period and
+then closes by itself; a refusal after a run of wrong passphrases means **wait**, and
+is not retried here. The statements and frames are the protocol repository's
+`spec/vault-v1.md`.
+
 ## Objects, files and health
 
 Everything the wire protocol does not serve is here, and it is a different client

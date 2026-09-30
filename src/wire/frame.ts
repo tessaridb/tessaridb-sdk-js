@@ -18,7 +18,12 @@ export const FRAME = {
   subscribe: 4,
   change: 5,
   elsewhere: 13,
+  /** Client → node only, and only to a node whose greeting says minor 2 or later (§3.14). */
+  vault: 17,
 } as const;
+
+/** The minor a node must announce before a Vault frame is sent to it. */
+export const VAULT_MINOR = 2;
 
 /** `kind` 1 byte + `length` 4 bytes big-endian. */
 export const HEADER_BYTES = 5;

@@ -31,3 +31,21 @@ export class RefusalError extends Error {
     this.code = code;
   }
 }
+
+/**
+ * The node's greeting names a minor below the one a call needs, so nothing was
+ * sent: a frame an older node does not know closes the connection.
+ */
+export class NodeTooOldError extends Error {
+  override readonly name = 'NodeTooOldError';
+  readonly found: number;
+  readonly needed: number;
+
+  constructor(found: number, needed: number) {
+    super(
+      `this node speaks protocol minor ${found}; this call needs ${needed} or later`,
+    );
+    this.found = found;
+    this.needed = needed;
+  }
+}

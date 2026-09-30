@@ -1,10 +1,16 @@
-import { HandshakeError, ProtocolError, RefusalError } from './error.ts';
+import {
+  HandshakeError,
+  NodeTooOldError,
+  ProtocolError,
+  RefusalError,
+} from './error.ts';
 import {
   FRAME,
   GREETING_BYTES,
   MAGIC,
   MAJOR,
   MINOR,
+  VAULT_MINOR,
   frame,
   greeting,
 } from './wire/frame.ts';
@@ -236,6 +242,47 @@ export class Connection {
         throw new RefusalError('refused', readRefusal(next.body));
       }
       yield readChange(next.body);
+    }
+  }
+
+  /**
+   * Send one Vault frame (protocol §3.14) and return the status value it
+   * answers with. `body` is given this connection's credentials, which the frame
+   * carries as a Request does. Nothing is sent to a node below minor 2, which
+   * would close the connection on a tag it does not know.
+   *
+   * The building block of the vault functions in `vault.ts`; call those.
+   */
+  async vaultFrame(
+    body: (credentials: Credentials | undefined) => Uint8Array,
+  ): Promise<Value> {
+    if (this.#peerMinor < VAULT_MINOR) {
+      throw new NodeTooOldError(this.#peerMinor, VAULT_MINOR);
+    }
+    if (this.#subscribed) {
+      throw new ProtocolError(
+        'this connection is subscribed and no longer answers statements',
+      );
+    }
+    if (this.#busy) {
+      throw new ProtocolError('a statement is already in flight on this connection');
+    }
+    this.#busy = true;
+    try {
+      await this.#stream.write(frame(FRAME.vault, body(this.#credentials)));
+      const reply = await this.#stream.next(STATEMENT_FRAMES);
+      if (reply === null)
+        throw new IoError('the node closed the connection without answering');
+      if (reply.kind === FRAME.refusal)
+        throw new RefusalError('refused', readRefusal(reply.body));
+      const outcomes = reply.kind === FRAME.answer ? readAnswer(reply.body) : [];
+      const [only] = outcomes;
+      if (outcomes.length !== 1 || only?.kind !== 'value') {
+        throw new ProtocolError('a vault frame is answered with one value');
+      }
+      return only.value;
+    } finally {
+      this.#busy = false;
     }
   }
 
