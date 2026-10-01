@@ -49,3 +49,61 @@ export class NodeTooOldError extends Error {
     this.needed = needed;
   }
 }
+
+/**
+ * Three redirects followed and still no answer (protocol §3.12). Going on would
+ * not tell a loop from a cluster moving faster than the request.
+ */
+export class RedirectLoopError extends Error {
+  override readonly name = 'RedirectLoopError';
+  readonly hops: number;
+
+  constructor(hops: number) {
+    super(`still redirected after ${hops} hops; stopping rather than going round`);
+    this.hops = hops;
+  }
+}
+
+/**
+ * A redirect dated by an older leadership than one this request already
+ * followed: it was decided before that one, and points at the past.
+ */
+export class StaleRedirectError extends Error {
+  override readonly name = 'StaleRedirectError';
+  readonly epoch: bigint;
+  readonly floor: bigint;
+
+  constructor(epoch: bigint, floor: bigint) {
+    super(`redirected under epoch ${epoch} after following epoch ${floor}`);
+    this.epoch = epoch;
+    this.floor = floor;
+  }
+}
+
+/** The address a redirect named answered as a different node; the request was not sent there. */
+export class WrongNodeError extends Error {
+  override readonly name = 'WrongNodeError';
+  readonly expected: Uint8Array;
+
+  constructor(expected: Uint8Array) {
+    super('the redirect named another node than the one that answered there');
+    this.expected = expected;
+  }
+}
+
+/**
+ * The session's namespace or database is not a plain name, so it is not selected
+ * again on the node a redirect named: a name is grammar, and this client does not
+ * quote one into a script.
+ */
+export class NotFollowableError extends Error {
+  override readonly name = 'NotFollowableError';
+  readonly selected: string;
+
+  constructor(selected: string) {
+    super(
+      `cannot follow: '${selected}' is not a plain name to select on the other node`,
+    );
+    this.selected = selected;
+  }
+}
