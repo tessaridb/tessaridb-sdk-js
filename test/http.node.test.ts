@@ -194,10 +194,10 @@ runs('an open store has no session to open, and that is not a failure', async ()
   assert.ok((await node.health()).status);
 });
 
-runs('the whole log comes back in one response', async () => {
+runs('the whole store comes back in one response', async () => {
   const node = client();
-  const log = await node.backup();
-  assert.ok(log.length > 0, 'a store that has been written to has a log');
+  const backup = await node.backup();
+  assert.ok(backup.length > 0, 'a store that has been written to has a backup');
 });
 
 /**

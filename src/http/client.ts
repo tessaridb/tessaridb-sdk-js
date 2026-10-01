@@ -241,7 +241,11 @@ export class HttpClient {
     return appended;
   }
 
-  /** The whole log, in one response. There is no resumption and no range support. */
+  /**
+   * A snapshot of the store's state, in one response (a node before `0.18.0-beta`
+   * answered its whole log); with `from`, the log committed after that position,
+   * `1n` for the whole log. There is no resumption and no range support.
+   */
   async backup(from?: bigint): Promise<Uint8Array> {
     const query = from === undefined ? '' : `?from=${from}`;
     const response = await this.#send(`/backup${query}`, { method: 'GET' });
