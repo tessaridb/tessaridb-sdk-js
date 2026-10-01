@@ -250,3 +250,63 @@ test('a tenancy that is not a plain name is not followed', async () => {
   assert.deepEqual(b.seen, [], 'B was never dialled');
   conn.close();
 });
+
+/*
+ * The live half: a write and a leader-only read sent to a follower of a real
+ * two-node cluster land on the leader, the read by a transient redirect this
+ * client follows. `TESSARIDB_TEST_CLUSTER=<leader host:port>,<follower
+ * host:port>`, a cluster whose namespace `prod` holds database `shop` with
+ * collection `ledger`.
+ */
+const cluster = process.env['TESSARIDB_TEST_CLUSTER'];
+
+test(
+  'a misrouted write and read land on the leader of a live cluster',
+  { skip: cluster === undefined ? 'TESSARIDB_TEST_CLUSTER is not set' : false },
+  async () => {
+    const [leader, follower] = (cluster ?? '').split(',');
+    const at = (address: string | undefined) => {
+      const [host, port] = (address ?? '').split(':');
+      return connect({ host: host ?? '', port: Number(port) });
+    };
+    const tenancy = 'USE NAMESPACE prod; USE DATABASE shop;';
+    const key = `js${process.pid}`;
+    const nodeOf = async (conn: Connection): Promise<Value | undefined> => {
+      const reply = await conn.execute(CONTEXT);
+      const last = reply.kind === 'answer' ? reply.outcomes.at(-1) : undefined;
+      return last?.kind === 'value' && last.value.kind === 'object'
+        ? last.value.fields.get('node')
+        : undefined;
+    };
+    const rows = (reply: Awaited<ReturnType<Connection['execute']>>): number => {
+      const last = reply.kind === 'answer' ? reply.outcomes.at(-1) : undefined;
+      return last?.kind === 'records' ? last.records.length : -1;
+    };
+
+    // A forward carries the script and not the session.
+    const writer = await at(follower);
+    await writer.execute(`${tenancy} CREATE ledger:'${key}' = { total: 1 };`);
+    writer.close();
+    const onLeader = await at(leader);
+    const leaderNode = await nodeOf(onLeader);
+    await onLeader.execute(tenancy);
+    assert.equal(rows(await onLeader.execute(`SELECT * FROM ledger:'${key}';`)), 1);
+    onLeader.close();
+
+    const reader = await at(follower);
+    const followerNode = await nodeOf(reader);
+    assert.notDeepEqual(leaderNode, followerNode);
+    await reader.execute(tenancy);
+    const reply = await reader.execute(
+      `SELECT * FROM ledger:'${key}' ANSWERED BY LEADER;`,
+    );
+    assert.equal(reply.kind, 'answer', 'the redirect was followed');
+    assert.equal(rows(reply), 1, 'the leader answered');
+    assert.deepEqual(
+      await nodeOf(reader),
+      followerNode,
+      'a transient redirect stays here',
+    );
+    reader.close();
+  },
+);
