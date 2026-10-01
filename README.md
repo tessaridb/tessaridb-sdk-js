@@ -40,6 +40,7 @@ reported so a caller can decline to send what an older node cannot read.
 | HTTP surface — objects, files, backup, health      | **done**, exercised against a running node    |
 | session token — §5.8                               | **done**, open once, `Bearer` thereafter      |
 | wire over a WebSocket (`GET /wire`) — browsers     | **done**, live suite on both transports       |
+| following a redirect — §3.12, over TCP             | **done**, against scripted nodes              |
 | `/watch`, `/metrics`, `POST /password`             | not yet                                       |
 
 `HEAD` on the file routes is **deliberately** not offered rather than pending. The
@@ -55,6 +56,21 @@ import { encodeValue, decodeValue } from '@tessaridb/client';
 const bytes = encodeValue({ kind: 'integer', value: 42n });
 const back = decodeValue(bytes); // { kind: 'integer', value: 42n }
 ```
+
+## Following a redirect
+
+A clustered node that cannot run a request names the node that can, in a frame
+of its own rather than as an error. A connection made by `connect()` over TCP
+follows it inside `execute`: at most three hops, never to an older leadership
+than one already followed, and only after `session::context()` there says it is
+the node named (node `0.20.0-beta` and later). The session's namespace and
+database are selected there first, each only if it is a plain name
+(`[A-Za-z_][A-Za-z0-9_]*`). A _settled_ redirect moves the connection to that
+node; a _transient_ one answers and leaves it where it was. Each way following
+can stop is its own error — `RedirectLoopError`, `StaleRedirectError`,
+`WrongNodeError`, `NotFollowableError`. Over a WebSocket, or a carrier you
+brought, the redirect is returned as `{ kind: 'elsewhere' }`: the address it
+names is a wire address, which a browser cannot dial.
 
 ## Writing a statement
 

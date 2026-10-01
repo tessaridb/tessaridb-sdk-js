@@ -30,8 +30,12 @@ export { ByteReader, ByteWriter } from './codec/bytes.ts';
 export {
   HandshakeError,
   NodeTooOldError,
+  NotFollowableError,
   ProtocolError,
+  RedirectLoopError,
   RefusalError,
+  StaleRedirectError,
+  WrongNodeError,
 } from './error.ts';
 export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';
 export { CEILING, FRAME, TooLargeError, UnknownFrameError } from './wire/frame.ts';

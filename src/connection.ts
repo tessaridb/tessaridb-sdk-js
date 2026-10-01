@@ -2,8 +2,12 @@ import {
   HandshakeError,
   NodeTooOldError,
   ProtocolError,
+  RedirectLoopError,
   RefusalError,
+  StaleRedirectError,
+  WrongNodeError,
 } from './error.ts';
+import { CONTEXT, MOST_HOPS, contextOf, sameNode, selection } from './follow.ts';
 import {
   FRAME,
   GREETING_BYTES,
@@ -81,8 +85,12 @@ const CHANGE_FRAMES: ReadonlySet<number> = new Set([FRAME.change, FRAME.refusal]
  * connection — that is what a connection means. Two connections are two sessions
  * and share nothing but the store.
  */
+/** How a connection reaches the node a redirect names: `host:port` in, greeted connection out. */
+export type Dial = (endpoint: string) => Promise<Connection>;
+
 export class Connection {
   #stream: FrameStream;
+  #dial: Dial | undefined;
   #credentials: Credentials | undefined;
   #peerMinor: number;
   #subscribed: boolean;
@@ -92,8 +100,10 @@ export class Connection {
     stream: FrameStream,
     peerMinor: number,
     credentials?: Credentials,
+    dial?: Dial,
   ) {
     this.#stream = stream;
+    this.#dial = dial;
     this.#credentials = credentials;
     this.#peerMinor = peerMinor;
     this.#subscribed = false;
@@ -111,7 +121,11 @@ export class Connection {
    * `connect()` is the usual way in; this is the seam it uses, open for a caller
    * that brings its own carrier.
    */
-  static async over(carrier: Carrier, options: ConnectOptions): Promise<Connection> {
+  static async over(
+    carrier: Carrier,
+    options: ConnectOptions,
+    dial?: Dial,
+  ): Promise<Connection> {
     const stream = new FrameStream(carrier);
     await stream.write(greeting());
 
@@ -147,7 +161,7 @@ export class Connection {
       options.user === undefined
         ? undefined
         : { user: options.user, password: options.password ?? '' };
-    return new Connection(stream, minor, credentials);
+    return new Connection(stream, minor, credentials, dial);
   }
 
   /**
@@ -158,8 +172,66 @@ export class Connection {
    * names the place in the script, and rewording makes this client a second
    * author for one error. A refusal does not close the connection; a client that
    * mistyped a statement has not stopped being a client.
+   *
+   * A redirect (protocol §3.12) is followed when this connection can dial — one
+   * made by `connect()` over TCP: at most three hops, the node there checked
+   * with `session::context()`, this session's namespace and database selected
+   * there first. A `settled` redirect moves this connection to that node; a
+   * `transient` one answers and stays here. Over a WebSocket, or a carrier the
+   * caller brought, the redirect is returned as `{ kind: 'elsewhere' }`.
    */
   async execute(script: string, parameters?: Map<string, Value>): Promise<Reply> {
+    const params = parameters ?? new Map<string, Value>();
+    const reply = await this.#ask(script, params);
+    if (reply.kind === 'answer' || this.#dial === undefined) return reply;
+    return this.#follow(this.#dial, script, params, reply.redirect);
+  }
+
+  /** Send `script` where `first` says, and on, until something answers. */
+  async #follow(
+    dial: Dial,
+    script: string,
+    parameters: Map<string, Value>,
+    first: Elsewhere,
+  ): Promise<Reply> {
+    const selecting = selection(contextOf(await this.#ask(CONTEXT, new Map())));
+    let redirect = first;
+    let floor = 0n;
+    for (let hops = 0; ; hops++) {
+      if (hops >= MOST_HOPS) throw new RedirectLoopError(hops);
+      if (redirect.epoch < floor) throw new StaleRedirectError(redirect.epoch, floor);
+      floor = redirect.epoch;
+      const there = await dial(redirect.endpoint);
+      let reply: Reply;
+      try {
+        if (
+          !sameNode(contextOf(await there.#ask(CONTEXT, new Map())).node, redirect.node)
+        ) {
+          throw new WrongNodeError(redirect.node);
+        }
+        if (selecting !== undefined) await there.#ask(selecting, new Map());
+        reply = await there.#ask(script, parameters);
+      } catch (error) {
+        there.close();
+        throw error;
+      }
+      if (reply.kind === 'answer') {
+        if (redirect.settlement === 'settled') {
+          this.#stream.close();
+          this.#stream = there.#stream;
+          this.#peerMinor = there.#peerMinor;
+        } else {
+          there.close();
+        }
+        return reply;
+      }
+      there.close();
+      redirect = reply.redirect;
+    }
+  }
+
+  /** One request and its reply, a redirect returned rather than followed. */
+  async #ask(script: string, parameters: Map<string, Value>): Promise<Reply> {
     if (this.#subscribed) {
       throw new ProtocolError(
         'this connection is subscribed and no longer answers statements — open a second connection',
@@ -170,7 +242,7 @@ export class Connection {
     }
     this.#busy = true;
     try {
-      const body = writeRequest(script, parameters ?? new Map(), this.#credentials);
+      const body = writeRequest(script, parameters, this.#credentials);
       await this.#stream.write(frame(FRAME.request, body));
 
       const reply = await this.#stream.next(STATEMENT_FRAMES);
