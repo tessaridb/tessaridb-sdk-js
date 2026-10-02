@@ -50,10 +50,19 @@ export interface ConnectOptions {
    */
   transport?: 'tcp' | 'websocket';
   /**
-   * `wss://` rather than `ws://` — a node behind a TLS-terminating proxy. The
-   * node serves no TLS itself. WebSocket only.
+   * `wss://` rather than `ws://` — a node serving TLS, or one behind a
+   * TLS-terminating proxy. WebSocket only, and trusted by the runtime's own
+   * certificate store: a `WebSocket` takes no authority of its own.
    */
   secure?: boolean;
+  /**
+   * Speak TLS 1.3 to the wire port (protocol §1.1), checking the node's
+   * certificate chain and that it names `host` — a DNS name or an IP address.
+   * `ca` is the PEM of the authority (or authorities) to trust; without it, the
+   * runtime's own store. There is no option that skips either check. A redirect
+   * is followed with the same trust. TCP only.
+   */
+  tls?: { readonly ca?: string };
 }
 
 /**

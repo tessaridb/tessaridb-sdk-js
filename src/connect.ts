@@ -1,6 +1,6 @@
 import { Connection, type ConnectOptions } from './connection.ts';
 import { ProtocolError } from './error.ts';
-import { dialTcp } from './wire/tcp.ts';
+import { dialTcp, dialTls } from './wire/tcp.ts';
 import { openWebSocket } from './wire/websocket.ts';
 
 /**
@@ -36,6 +36,8 @@ export async function connect(options: ConnectOptions): Promise<Connection> {
           options.secure ?? false,
           timeout,
         )
-      : await dialTcp(options.host, options.port, timeout);
+      : options.tls !== undefined
+        ? await dialTls(options.host, options.port, timeout, options.tls.ca)
+        : await dialTcp(options.host, options.port, timeout);
   return Connection.over(carrier, options, dial);
 }

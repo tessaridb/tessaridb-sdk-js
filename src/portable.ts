@@ -35,6 +35,7 @@ export {
   RedirectLoopError,
   RefusalError,
   StaleRedirectError,
+  TlsError,
   WrongNodeError,
 } from './error.ts';
 export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';

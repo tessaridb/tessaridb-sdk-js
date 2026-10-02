@@ -14,6 +14,16 @@ export class HandshakeError extends Error {
 }
 
 /** The bytes did not conform to the specification. Never a retry. */
+/**
+ * TLS with the node failed — the handshake, its name, its chain (protocol §1.1).
+ *
+ * The transport class, and deliberately not an `IoError`: nothing about the next
+ * attempt at the same node would differ, so it is not retried.
+ */
+export class TlsError extends Error {
+  override readonly name = 'TlsError';
+}
+
 export class ProtocolError extends Error {
   override readonly name = 'ProtocolError';
 }

@@ -345,8 +345,9 @@ Three things to know first:
   attaches both to a WebSocket from _any_ page, so honouring them would let any
   page act as the user. A store with no users declared is open here as it is
   everywhere.
-- **`secure: true` needs a TLS-terminating proxy** in front of the HTTP port. The
-  node serves no TLS, and a page loaded over `https://` cannot open `ws://` at all.
+- **`secure: true` is `wss://`** — to a node serving TLS, or to a TLS-terminating
+  proxy in front of one that does not. The browser checks the certificate against
+  its own store; a page loaded over `https://` cannot open `ws://` at all.
 - **A browser cannot stop reading.** Over TCP a subscriber that stops consuming
   fills its socket and the node drops it after 30 seconds; a browser's `WebSocket`
   keeps accepting, so unconsumed changes pile up in the page's memory. Consume
@@ -363,11 +364,32 @@ changed, with nothing anywhere reporting it. The fix is the parser's source-text
 access, which arrived in Node 22. On a runtime without it this client refuses to
 read the body rather than reading it wrongly.
 
-## There is no TLS on the wire protocol
+## TLS
 
-Credentials travel as given. Run this on a protected network, or behind something
-that terminates TLS. This is a property of the protocol, not an omission in the
-client, and it is stated here rather than left to be discovered.
+A node started with a certificate speaks TLS 1.3 on both ports and nothing else,
+and a cluster node serves clients in the clear only when its operator chose to
+(node `0.21.0-beta` and later).
+
+```ts
+import { readFileSync } from 'node:fs';
+import { connect, HttpClient } from '@tessaridb/client';
+
+const connection = await connect({
+  host: 'db.example',
+  port: 9080,
+  tls: { ca: readFileSync('ca.pem', 'utf8') }, // or tls: {} for the system's store
+});
+const http = new HttpClient({ host: 'db.example', port: 8000, secure: true });
+```
+
+The wire connection checks the node's certificate chain and that it names the
+host — a DNS name, or an IP address against the certificate's IP entries —
+including each node a redirect sends it to; there is no option that turns either
+check off, and a failed handshake is a `TlsError`, which is not retried. The HTTP
+client uses the runtime's `fetch`, which checks against the runtime's own store:
+start Node with `NODE_EXTRA_CA_CERTS=ca.pem` to add a private authority to it.
+Without TLS, credentials travel in the clear, which belongs on a network you
+protect.
 
 ## Values
 
