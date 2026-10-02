@@ -78,6 +78,13 @@ export interface HttpOptions {
   readonly host: string;
   readonly port: number;
   readonly credentials?: { readonly user: string; readonly password: string };
+  /**
+   * `https://` rather than `http://` — a node serving TLS (protocol §1.1). The
+   * runtime's `fetch` checks the certificate against its own store and the
+   * host name, and offers no switch to skip either. A private authority is
+   * added to Node's store with `NODE_EXTRA_CA_CERTS=<ca.pem>` at start-up.
+   */
+  readonly secure?: boolean;
 }
 
 const SEGMENT = /^[A-Za-z0-9_]+$/;
@@ -130,7 +137,7 @@ export class HttpClient {
   #token: string | undefined;
 
   constructor(options: HttpOptions) {
-    this.#origin = `http://${options.host}:${options.port}`;
+    this.#origin = `${options.secure === true ? 'https' : 'http'}://${options.host}:${options.port}`;
     this.#credentials = options.credentials;
   }
 
