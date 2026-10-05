@@ -38,6 +38,7 @@ export {
   TlsError,
   WrongNodeError,
 } from './error.ts';
+export type { RefusalClass } from './error.ts';
 export { FrameStream, IoError, TruncatedError } from './wire/stream.ts';
 export { CEILING, FRAME, TooLargeError, UnknownFrameError } from './wire/frame.ts';
 export { readAnswer } from './wire/outcome.ts';

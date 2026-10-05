@@ -21,7 +21,12 @@
  * on the first authenticated call and presents the token thereafter.
  */
 
-import { ProtocolError, RefusalError } from '../error.ts';
+import {
+  ProtocolError,
+  RefusalError,
+  refusalClassOfWord,
+  type RefusalClass,
+} from '../error.ts';
 import { readAnswerBody, type HttpOutcome } from './answer.ts';
 import { type JsonValue, parseJson } from './json.ts';
 import { batch } from './events.ts';
@@ -56,10 +61,13 @@ export interface FileEntry {
 export class HttpError extends Error {
   override readonly name = 'HttpError';
   readonly status: number;
+  /** The class the body's `code` names (§5.4); `undefined` from a node before 1.3. */
+  readonly refusalClass: RefusalClass | undefined;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, refusalClass?: RefusalClass) {
     super(message);
     this.status = status;
+    this.refusalClass = refusalClass;
   }
 }
 
@@ -454,17 +462,21 @@ export class HttpClient {
     }
     const text = await response.text();
     let sentence = text;
+    let refusalClass: RefusalClass | undefined;
     try {
       const body = parseJson(text);
       if (body !== null && typeof body === 'object' && !Array.isArray(body)) {
         sentence = String(body['error'] ?? text);
+        const code = body['code'];
+        if (typeof code === 'string') refusalClass = refusalClassOfWord(code);
       }
     } catch {
       // A refusal whose body is not the documented shape still has a status,
       // which is the part a client branches on.
     }
-    if (response.status === 400) throw new RefusalError('refused', sentence);
-    throw new HttpError(response.status, sentence);
+    if (response.status === 400)
+      throw new RefusalError('refused', sentence, refusalClass);
+    throw new HttpError(response.status, sentence, refusalClass);
   }
 
   async #body(response: Response): Promise<JsonValue> {

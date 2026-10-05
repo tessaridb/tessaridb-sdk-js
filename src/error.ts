@@ -29,16 +29,64 @@ export class ProtocolError extends Error {
 }
 
 /**
+ * What a refusal says to do next (protocol §3.6, from minor 3). The message is
+ * prose and changes between releases; branch on this. `unknown` is a class the
+ * node could not decide or this client does not know — treat it as not retriable.
+ */
+export type RefusalClass =
+  | 'invalid'
+  | 'unauthenticated'
+  | 'forbidden'
+  | 'throttled'
+  | 'elsewhere'
+  | 'retry'
+  | 'conflict'
+  | 'unavailable'
+  | 'internal'
+  | 'unknown';
+
+const BY_BYTE: readonly RefusalClass[] = [
+  'unknown',
+  'invalid',
+  'unauthenticated',
+  'forbidden',
+  'throttled',
+  'elsewhere',
+  'retry',
+  'conflict',
+  'unavailable',
+  'internal',
+];
+
+/** The class a wire byte names; `0` and anything past the table are `unknown`. */
+export function refusalClassOfByte(byte: number): RefusalClass {
+  return BY_BYTE[byte] ?? 'unknown';
+}
+
+/** The class an HTTP error body's `code` names. */
+export function refusalClassOfWord(word: string): RefusalClass {
+  return isRefusalClass(word) ? word : 'unknown';
+}
+
+function isRefusalClass(word: string): word is RefusalClass {
+  return (BY_BYTE as readonly string[]).includes(word);
+}
+
+/**
  * The node understood the request and declined it — a syntax error, a permission,
  * a constraint. The message is the store's own words and is not reworded here.
+ * `refusalClass` is what to do about it: `undefined` from a node before protocol
+ * 1.3, which sends words only.
  */
 export class RefusalError extends Error {
   override readonly name = 'RefusalError';
   readonly code: string;
+  readonly refusalClass: RefusalClass | undefined;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, refusalClass?: RefusalClass) {
     super(message);
     this.code = code;
+    this.refusalClass = refusalClass;
   }
 }
 

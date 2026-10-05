@@ -157,7 +157,8 @@ runs(
     try {
       await assert.rejects(
         () => connection.execute('SELEKT * FROM nothing;'),
-        RefusalError,
+        (error: unknown) =>
+          error instanceof RefusalError && error.refusalClass === 'invalid',
       );
 
       // Still a client. A mistyped statement has not ended the session.

@@ -1,7 +1,7 @@
 import { ByteReader, ByteWriter } from '../codec/bytes.ts';
 import { writeValue } from '../codec/encode.ts';
 import { readValue } from '../codec/decode.ts';
-import { ProtocolError } from '../error.ts';
+import { ProtocolError, refusalClassOfByte, type RefusalClass } from '../error.ts';
 import type { Value } from '../value.ts';
 
 export interface Credentials {
@@ -158,10 +158,23 @@ export function readElsewhere(body: Uint8Array): Elsewhere {
   return { node, epoch, settlement, endpoint: r.text('redirect endpoint') };
 }
 
-/** A Refusal body is the store's own message, whole, with no length prefix — and carried through verbatim. */
-export function readRefusal(body: Uint8Array): string {
+/**
+ * A Refusal body (§3.6): a first byte of 0-9 is the class, anything else is the
+ * first byte of a message from a node before protocol 1.3, which has no class.
+ * The message is the store's own words, carried through verbatim.
+ */
+export function readRefusal(body: Uint8Array): {
+  readonly refusalClass: RefusalClass | undefined;
+  readonly message: string;
+} {
+  const first = body[0];
+  const classed = first !== undefined && first <= 9;
+  const words = classed ? body.subarray(1) : body;
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(body);
+    return {
+      refusalClass: classed ? refusalClassOfByte(first) : undefined,
+      message: new TextDecoder('utf-8', { fatal: true }).decode(words),
+    };
   } catch {
     throw new ProtocolError('invalid UTF-8 in a refusal message');
   }

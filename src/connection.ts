@@ -264,7 +264,7 @@ export class Connection {
         case FRAME.elsewhere:
           return { kind: 'elsewhere', redirect: readElsewhere(reply.body) };
         case FRAME.refusal:
-          throw new RefusalError('refused', readRefusal(reply.body));
+          throw refusalOf(reply.body);
         default:
           throw new ProtocolError(
             `frame kind ${reply.kind} is not an answer to a request`,
@@ -320,7 +320,7 @@ export class Connection {
       const next = await this.#stream.next(CHANGE_FRAMES);
       if (next === null) return;
       if (next.kind === FRAME.refusal) {
-        throw new RefusalError('refused', readRefusal(next.body));
+        throw refusalOf(next.body);
       }
       yield readChange(next.body);
     }
@@ -354,8 +354,7 @@ export class Connection {
       const reply = await this.#stream.next(STATEMENT_FRAMES);
       if (reply === null)
         throw new IoError('the node closed the connection without answering');
-      if (reply.kind === FRAME.refusal)
-        throw new RefusalError('refused', readRefusal(reply.body));
+      if (reply.kind === FRAME.refusal) throw refusalOf(reply.body);
       const outcomes = reply.kind === FRAME.answer ? readAnswer(reply.body) : [];
       const [only] = outcomes;
       if (outcomes.length !== 1 || only?.kind !== 'value') {
@@ -370,4 +369,10 @@ export class Connection {
   close(): void {
     this.#stream.close();
   }
+}
+
+/** A Refusal frame as the error it is, with its class when the node sent one. */
+function refusalOf(body: Uint8Array): RefusalError {
+  const refused = readRefusal(body);
+  return new RefusalError('refused', refused.message, refused.refusalClass);
 }
