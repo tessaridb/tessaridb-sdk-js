@@ -88,7 +88,7 @@ export function readHeader(bytes: Uint8Array): FrameHeader {
 /** The six bytes both sides send on connect, before anything else. */
 export const MAGIC = Uint8Array.from([0x54, 0x45, 0x53, 0x53]); // "TESS"
 export const MAJOR = 1;
-export const MINOR = 1;
+export const MINOR = 3;
 export const GREETING_BYTES = 6;
 
 export function greeting(): Uint8Array {

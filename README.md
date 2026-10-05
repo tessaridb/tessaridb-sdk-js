@@ -21,13 +21,20 @@ This client's version is **its own** and never tracks the engine's. A fix here
 would otherwise force an invented engine release, and an engine release would
 force five invented client releases.
 
-What has to match is the **protocol**. This release speaks **protocol 1.1**, plus the vault frame of **1.2**, which it
-sends only to a node that announces minor 2 (node `0.17.0-beta` and later), and
+What has to match is the **protocol**. This release speaks **protocol 1.3** — the refusal class of minor 3 and the
+vault frame of minor 2, the latter sent only to a node that announces minor 2 (node `0.17.0-beta` and later), and
 connects to any node of protocol **major 1**, which is checked in the greeting
 before anything else is sent — a differing major is refused there rather than
 discovered mid-conversation, where it arrives as a decode failure that reads
 like corruption. A differing _minor_ is not a refusal: the peer's minor is
 reported so a caller can decline to send what an older node cannot read.
+
+**A refusal says what to do next.** From protocol 1.3 every refusal carries a
+class — `invalid`, `unauthenticated`, `forbidden`, `throttled`, `elsewhere`,
+`retry`, `conflict`, `unavailable` or `internal` — as one byte on the wire and as
+`code` in an HTTP error body. It is `refusalClass` on `RefusalError` and `HttpError` — `undefined` from a node before 1.3, which sends words only. Branch on the
+class, never on the message: the message is prose and changes between releases.
+A class this build does not know reads as `unknown`, which is not retriable.
 
 ## What works today
 
