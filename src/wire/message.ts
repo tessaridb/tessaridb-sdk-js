@@ -56,6 +56,7 @@ export function writeSubscribe(
   from: bigint,
   table?: string,
   cursor?: string,
+  condition?: Condition,
 ): Uint8Array {
   const w = new ByteWriter();
   w.u64(from);
@@ -66,9 +67,47 @@ export function writeSubscribe(
     w.text(table);
   }
   // Last and only when present (§3.7): without it this is the frame every
-  // earlier node reads.
-  if (cursor !== undefined) w.text(cursor);
+  // earlier node reads. A condition comes after it, so it needs the cursor's
+  // place filled: empty text, which is never a cursor a node hands out.
+  if (cursor !== undefined || condition !== undefined) w.text(cursor ?? '');
+  if (condition !== undefined) {
+    w.text(condition.text);
+    const parameters = new ByteWriter();
+    writeValue(parameters, { kind: 'object', fields: condition.parameters });
+    w.lenbytes(parameters.finish());
+  }
   return w.finish();
+}
+
+/**
+ * Which records of one table a feed follows (§3.7, node minor 4): TessariQL
+ * without `WHERE`, its parameters bound after the node reads it so a value can
+ * never become syntax.
+ */
+export interface Condition {
+  text: string;
+  parameters: Map<string, Value>;
+}
+
+/**
+ * How far a feed that named a condition read past changes it did not send
+ * (§3.15). Stored as a change's position is: resume after `sequence`, or from
+ * `cursor` on a split table, and nothing is lost or repeated.
+ */
+export interface Progress {
+  readonly kind: 'progress';
+  /** The last change the feed read and did not send. */
+  sequence: bigint;
+  /** On a feed over a split table, where to resume after it. */
+  cursor?: string;
+}
+
+export function readProgress(body: Uint8Array): Progress {
+  const r = new ByteReader(body);
+  const sequence = r.u64('progress sequence');
+  const progress: Progress = { kind: 'progress', sequence };
+  if (!r.exhausted) progress.cursor = r.text('progress cursor');
+  return progress;
 }
 
 export type Fate = 'written' | 'removed';

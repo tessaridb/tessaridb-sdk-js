@@ -2,7 +2,13 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { ByteWriter } from '../src/codec/bytes.ts';
 import { readAnswer } from '../src/wire/outcome.ts';
-import { readChange, writeSubscribe } from '../src/wire/message.ts';
+import { readChange, readProgress, writeSubscribe } from '../src/wire/message.ts';
+import { createServer } from 'node:net';
+import { writeValue } from '../src/codec/encode.ts';
+import { connect } from '../src/connect.ts';
+import { NodeTooOldError, ProtocolError } from '../src/error.ts';
+import type { Value } from '../src/value.ts';
+import { hexToBytes, readCorpus } from './corpus.ts';
 
 /** One outcome: `u32` length (tag included), `u8` tag, then the rest. */
 function answerOf(...outcomes: Uint8Array[]): Uint8Array {
@@ -125,4 +131,127 @@ test('a subscribe sends its cursor last and only when it has one', () => {
   const resumed = writeSubscribe(0n, 'orders', '0:7,2:3');
   assert.deepEqual(resumed.subarray(0, plain.length), plain);
   assert.equal(new TextDecoder().decode(resumed.subarray(plain.length + 4)), '0:7,2:3');
+});
+
+test('a condition follows an empty cursor, its parameters one object (§3.7)', () => {
+  const parameters = new Map<string, Value>([
+    ['least', { kind: 'integer', value: 100n }],
+  ]);
+  const narrowed = writeSubscribe(7n, 'orders', undefined, {
+    text: 'total > $least',
+    parameters,
+  });
+  const want = new ByteWriter();
+  want.u64(7n);
+  want.u8(1);
+  want.text('orders');
+  want.text('');
+  want.text('total > $least');
+  const object = new ByteWriter();
+  writeValue(object, { kind: 'object', fields: parameters });
+  want.lenbytes(object.finish());
+  assert.deepEqual(narrowed, want.finish());
+
+  const split = writeSubscribe(0n, 'orders', '1.1:d=12', {
+    text: 'open',
+    parameters: new Map(),
+  });
+  const resumed = new ByteWriter();
+  resumed.u64(0n);
+  resumed.u8(1);
+  resumed.text('orders');
+  resumed.text('1.1:d=12');
+  resumed.text('open');
+  const empty = new ByteWriter();
+  writeValue(empty, { kind: 'object', fields: new Map() });
+  resumed.lenbytes(empty.finish());
+  assert.deepEqual(split, resumed.finish());
+});
+
+test('every progress vector decodes exactly or is refused (§3.15)', () => {
+  const vectors = readCorpus('frames-v1.json')['progress'];
+  assert.ok(
+    Array.isArray(vectors) && vectors.length >= 5,
+    'the corpus carries progress vectors',
+  );
+  for (const vector of vectors as Array<Record<string, unknown>>) {
+    const body = hexToBytes(String(vector['body_hex']));
+    if ('malformed' in vector) {
+      assert.throws(() => readProgress(body), ProtocolError, String(vector['name']));
+      continue;
+    }
+    const decoded = vector['decoded'] as { sequence: string; cursor: string | null };
+    const got = readProgress(body);
+    assert.equal(got.sequence, BigInt(decoded.sequence), String(vector['name']));
+    assert.equal(got.cursor ?? null, decoded.cursor, String(vector['name']));
+  }
+});
+
+/** A node on loopback that greets with `minor`, records what it is sent, and says `said`. */
+async function nodeOf(
+  minor: number,
+  said: Uint8Array = new Uint8Array(),
+): Promise<{ port: number; heard: Promise<Uint8Array> }> {
+  let resolveHeard: (bytes: Uint8Array) => void = () => {};
+  const heard = new Promise<Uint8Array>((resolve) => {
+    resolveHeard = resolve;
+  });
+  const server = createServer((socket) => {
+    const chunks: Buffer[] = [];
+    socket.on('data', (chunk) => chunks.push(chunk));
+    socket.on('close', () => {
+      resolveHeard(new Uint8Array(Buffer.concat(chunks)).subarray(6));
+      server.close();
+    });
+    socket.write(Uint8Array.from([0x54, 0x45, 0x53, 0x53, 1, minor]));
+    socket.end(said);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('no port');
+  return { port: address.port, heard };
+}
+
+test('a condition is not sent to a node before minor four', async () => {
+  const node = await nodeOf(3);
+  const conn = await connect({ host: '127.0.0.1', port: node.port });
+  await assert.rejects(
+    conn.changes({ table: 'orders', condition: 'open' }).next(),
+    (error: unknown) =>
+      error instanceof NodeTooOldError && error.found === 3 && error.needed === 4,
+  );
+  conn.close();
+  assert.equal(
+    (await node.heard).length,
+    0,
+    'nothing reached a node that would misread it',
+  );
+});
+
+test('a narrowed feed hands over progress beside its changes', async () => {
+  const progress = new ByteWriter();
+  progress.u64(41n);
+  progress.text('1.1:d=12');
+  const change = new ByteWriter();
+  change.u64(42n);
+  change.text('orders');
+  change.text('7');
+  change.u8(1);
+  const said = new ByteWriter();
+  for (const [kind, body] of [
+    [37, progress.finish()],
+    [5, change.finish()],
+  ] as const) {
+    said.u8(kind);
+    said.lenbytes(body);
+  }
+  const node = await nodeOf(4, said.finish());
+  const conn = await connect({ host: '127.0.0.1', port: node.port });
+  const arrived = [];
+  for await (const item of conn.changes({ table: 'orders', condition: 'open' }))
+    arrived.push(item);
+  assert.deepEqual(arrived[0], { kind: 'progress', sequence: 41n, cursor: '1.1:d=12' });
+  assert.equal(arrived.length, 2);
+  const second = arrived[1];
+  assert.ok(second !== undefined && !('kind' in second) && second.fate === 'removed');
 });
