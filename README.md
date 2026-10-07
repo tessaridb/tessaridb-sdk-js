@@ -21,8 +21,10 @@ This client's version is **its own** and never tracks the engine's. A fix here
 would otherwise force an invented engine release, and an engine release would
 force five invented client releases.
 
-What has to match is the **protocol**. This release speaks **protocol 1.3** — the refusal class of minor 3 and the
-vault frame of minor 2, the latter sent only to a node that announces minor 2 (node `0.17.0-beta` and later), and
+What has to match is the **protocol**. This release speaks **protocol 1.4** — the refusal class of minor 3, the
+vault frame of minor 2, sent only to a node that announces minor 2 (node `0.17.0-beta` and later), and a feed's
+condition and progress frame of minor 4, sent and read only with a node that announces minor 4 (node `0.33.0-beta`
+and later) — and
 connects to any node of protocol **major 1**, which is checked in the greeting
 before anything else is sent — a differing major is refused there rather than
 discovered mid-conversation, where it arrives as a decode failure that reads
@@ -43,6 +45,7 @@ A class this build does not know reads as `unknown`, which is not retriable.
 | value codec — all seventeen types, both directions | **done**, 54/54 corpus vectors                |
 | wire connection, greeting, statements, answers     | **done**, exercised against a running node    |
 | change subscription                                | **done**, exercised against a running node    |
+| a feed narrowed by a condition, and its progress   | **done**, exercised against a running node    |
 | query builder                                      | **done**, 38/38 corpus, 26 executed by a node |
 | HTTP surface — objects, files, backup, health      | **done**, exercised against a running node    |
 | session token — §5.8                               | **done**, open once, `Bearer` thereafter      |

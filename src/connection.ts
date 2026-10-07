@@ -15,6 +15,7 @@ import {
   MAJOR,
   MINOR,
   VAULT_MINOR,
+  CONDITION_MINOR,
   frame,
   greeting,
 } from './wire/frame.ts';
@@ -22,13 +23,14 @@ import type { Carrier } from './wire/carrier.ts';
 import { FrameStream, IoError } from './wire/stream.ts';
 import {
   readChange,
+  readProgress,
   readElsewhere,
   readRefusal,
   writeRequest,
   writeSubscribe,
 } from './wire/message.ts';
 import { readAnswer } from './wire/outcome.ts';
-import type { Change, Credentials, Elsewhere } from './wire/message.ts';
+import type { Change, Credentials, Elsewhere, Progress } from './wire/message.ts';
 import type { Outcome } from './wire/outcome.ts';
 import type { Value } from './value.ts';
 
@@ -85,7 +87,19 @@ const STATEMENT_FRAMES: ReadonlySet<number> = new Set([
 // unselected database is the common case — so the refusal must be a known kind
 // here. Leaving it out turns "your session has no database" into "unknown frame
 // kind 3", which tells the caller to upgrade the client.
-const CHANGE_FRAMES: ReadonlySet<number> = new Set([FRAME.change, FRAME.refusal]);
+const CHANGE_FRAMES: ReadonlySet<number> = new Set([
+  FRAME.change,
+  FRAME.refusal,
+  FRAME.progress,
+]);
+
+/** Where a feed starts and what it watches. */
+export interface FollowOptions {
+  resumeAfter?: bigint;
+  fromStart?: boolean;
+  table?: string;
+  cursor?: string;
+}
 
 /**
  * One connection is one session.
@@ -294,16 +308,33 @@ export class Connection {
    * last change handled, sent back as it came. The node resumes after that
    * change, so no arithmetic is owed.
    */
+  changes(options?: FollowOptions): AsyncGenerator<Change>;
+  /**
+   * A feed over `table` narrowed by `condition` — TessariQL without `WHERE`,
+   * `parameters` bound after the node reads it (§3.7). A record that stops
+   * matching arrives as a removal, and a {@link Progress} arrives beside the
+   * changes when the feed skipped some: store it as a change's position is
+   * stored, or the resume point falls behind the log. Only a node of minor 4
+   * reads a condition — an older one sends every change — so the feed throws
+   * {@link NodeTooOldError} there before anything is sent.
+   */
+  changes(
+    options: FollowOptions & {
+      condition: string;
+      parameters?: Map<string, Value>;
+    },
+  ): AsyncGenerator<Change | Progress>;
   async *changes(
-    options: {
-      resumeAfter?: bigint;
-      fromStart?: boolean;
-      table?: string;
-      cursor?: string;
+    options: FollowOptions & {
+      condition?: string;
+      parameters?: Map<string, Value>;
     } = {},
-  ): AsyncGenerator<Change> {
+  ): AsyncGenerator<Change | Progress> {
     if (this.#subscribed)
       throw new ProtocolError('this connection is already subscribed');
+    if (options.condition !== undefined && this.#peerMinor < CONDITION_MINOR) {
+      throw new NodeTooOldError(this.#peerMinor, CONDITION_MINOR);
+    }
     this.#subscribed = true;
 
     const from = options.fromStart
@@ -313,7 +344,17 @@ export class Connection {
         : options.resumeAfter + 1n;
 
     await this.#stream.write(
-      frame(FRAME.subscribe, writeSubscribe(from, options.table, options.cursor)),
+      frame(
+        FRAME.subscribe,
+        writeSubscribe(
+          from,
+          options.table,
+          options.cursor,
+          options.condition === undefined
+            ? undefined
+            : { text: options.condition, parameters: options.parameters ?? new Map() },
+        ),
+      ),
     );
 
     for (;;) {
@@ -322,7 +363,9 @@ export class Connection {
       if (next.kind === FRAME.refusal) {
         throw refusalOf(next.body);
       }
-      yield readChange(next.body);
+      yield next.kind === FRAME.progress
+        ? readProgress(next.body)
+        : readChange(next.body);
     }
   }
 

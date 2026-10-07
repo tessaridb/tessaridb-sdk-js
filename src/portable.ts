@@ -23,7 +23,7 @@ export type { Page } from './vault.ts';
 export { VaultArgumentError, VaultStatements } from './vault/statements.ts';
 export type { Custody, SealState, VaultStatus } from './vault/frame.ts';
 export type { ConsumerOptions, Message, Settle } from './consumer.ts';
-export type { ConnectOptions, Reply } from './connection.ts';
+export type { ConnectOptions, FollowOptions, Reply } from './connection.ts';
 export { encodeValue, writeValue } from './codec/encode.ts';
 export { decodeValue, readValue } from './codec/decode.ts';
 export { ByteReader, ByteWriter } from './codec/bytes.ts';
@@ -52,9 +52,11 @@ export type {
 } from './wire/outcome.ts';
 export type {
   Change,
+  Condition,
   Credentials,
   Elsewhere,
   Fate,
+  Progress,
   Settlement,
 } from './wire/message.ts';
 export type {

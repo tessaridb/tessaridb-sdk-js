@@ -20,10 +20,15 @@ export const FRAME = {
   elsewhere: 13,
   /** Client → node only, and only to a node whose greeting says minor 2 or later (§3.14). */
   vault: 17,
+  /** Node → client only, and only to a client whose greeting said minor 4 or later (§3.15). */
+  progress: 37,
 } as const;
 
 /** The minor a node must announce before a Vault frame is sent to it. */
 export const VAULT_MINOR = 2;
+
+/** The minor a node must announce before a feed's condition is sent to it (§3.7). */
+export const CONDITION_MINOR = 4;
 
 /** `kind` 1 byte + `length` 4 bytes big-endian. */
 export const HEADER_BYTES = 5;
@@ -88,7 +93,7 @@ export function readHeader(bytes: Uint8Array): FrameHeader {
 /** The six bytes both sides send on connect, before anything else. */
 export const MAGIC = Uint8Array.from([0x54, 0x45, 0x53, 0x53]); // "TESS"
 export const MAJOR = 1;
-export const MINOR = 3;
+export const MINOR = 4;
 export const GREETING_BYTES = 6;
 
 export function greeting(): Uint8Array {

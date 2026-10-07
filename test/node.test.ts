@@ -207,6 +207,56 @@ runs('a subscription delivers a change written by another connection', async () 
   }
 });
 
+runs('a narrowed feed sends the match, the leaving and how far it read', async () => {
+  // §3.7 and §3.15 against a node of minor 4.
+  const run = `run-${process.pid}-${Date.now()}`;
+  let watcher: Awaited<ReturnType<typeof connect>> | undefined;
+  let writer: Awaited<ReturnType<typeof connect>> | undefined;
+  try {
+    watcher = await connect(address());
+    writer = await seeded();
+    await watcher.execute(USE);
+    const feed = watcher.changes({
+      table: 'watched',
+      fromStart: true,
+      condition: 'run = $run AND n > 40',
+      parameters: new Map<string, Value>([['run', { kind: 'string', value: run }]]),
+    });
+    for (const statement of [
+      `CREATE watched:'${run}-1' = { run: '${run}', n: 36 };`,
+      `CREATE watched:'${run}-2' = { run: '${run}', n: 45 };`,
+      `UPDATE watched:'${run}-2' SET n = 30;`,
+      `CREATE watched:'${run}-3' = { run: '${run}', n: 20 };`,
+    ]) {
+      await writer.execute(statement);
+    }
+    const fates: string[] = [];
+    let last = -1n;
+    let progressed = false;
+    const deadline = Date.now() + 10000;
+    while (!progressed && Date.now() < deadline) {
+      const next = await Promise.race([
+        feed.next(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
+      if (next === null || next.done === true) break;
+      const arrived = next.value;
+      if ('kind' in arrived) {
+        progressed = fates.length === 2 && arrived.sequence > last;
+        continue;
+      }
+      assert.equal(arrived.identity.includes(`${run}-2`), true, arrived.identity);
+      fates.push(arrived.fate);
+      last = arrived.sequence;
+    }
+    assert.deepEqual(fates, ['written', 'removed']);
+    assert.ok(progressed, 'the skip after the removal was said as progress');
+  } finally {
+    watcher?.close();
+    writer?.close();
+  }
+});
+
 runs('a value outcome carries a length before its value', async () => {
   // §3.5 writes this outcome as "names · `bytes` value", and `bytes` at the frame
   // layer is a u32 length then the bytes. Reading the value raw reads that
