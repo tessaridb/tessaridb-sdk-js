@@ -180,6 +180,43 @@ behaviour is the protocol repository's `spec/consumer-v1.md`, which every client
 follows, and the statements it sends are checked against all 14 cases of
 `conformance/consumer-v1.json`.
 
+## Taking work from a queue
+
+A queue (`DEFINE QUEUE`, engine `0.35.0` or later for everything below) hands
+each record to one worker under a hold that lapses. A `Queue` claims as a named
+worker and settles each record — `done` deletes it, `release` hands it back:
+
+```ts
+import { compare, connect, Queue } from '@tessaridb/client';
+
+const connection = await connect({ host: '127.0.0.1', port: 9080 });
+const queue = new Queue(connection, {
+  namespace: 'app',
+  database: 'main',
+  queue: 'jobs',
+  worker: 'resizer',
+  batch: 10,
+  // Take only the work this worker can do; values are bound.
+  where: compare('kind', 'eq', { kind: 'string', value: 'image' }),
+});
+
+// Automatic: resolving marks the record done, throwing hands it back at once.
+await queue.runAuto(async (job) => console.log(job.identity, job.attempts));
+
+// Manual: done, release (afterMs needs a NOT BEFORE field), or leave it.
+await queue.runManual(() => ({ kind: 'release', afterMs: 5000 }));
+
+// Or one step at a time.
+for (const job of await queue.claim(5)) await queue.done(job);
+```
+
+Workers on one queue take **different** records: a claim passes over records
+another worker's claim is taking. Work is **at least once** — key an outside
+effect on the queue and `job.identity`. A record whose attempts are spent goes to
+the queue's `DEAD LETTER TO` topic, read with a `Consumer`. The behaviour is
+`spec/queue-v1.md`, and `npm test` renders the statements against all 20 cases of
+`conformance/queue-v1.json`.
+
 ## A space as a cache, a counter and a lock
 
 A space (`DEFINE SPACE`) keeps one value per key with an optional expiry.

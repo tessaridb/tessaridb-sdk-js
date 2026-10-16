@@ -7,3 +7,8 @@ dist/
 
 # Local development hooks: they belong to a working copy, not to the repository.
 .githooks/
+
+# BGV governance — host-facing instruction files, never committed
+CLAUDE.md
+AGENTS.md
+MEMORY.md
