@@ -11,6 +11,7 @@ export { wireUrl } from './wire/websocket.ts';
 export { Cache, CacheArgumentError, CacheStatements, Lease } from './cache.ts';
 export type { Ttl } from './cache.ts';
 export { Consumer, ConsumerNameError } from './consumer.ts';
+export { Queue, QueueArgumentError } from './queue.ts';
 export {
   Vault,
   changePassphrase,
@@ -23,6 +24,7 @@ export type { Page } from './vault.ts';
 export { VaultArgumentError, VaultStatements } from './vault/statements.ts';
 export type { Custody, SealState, VaultStatus } from './vault/frame.ts';
 export type { ConsumerOptions, Message, Settle } from './consumer.ts';
+export type { Handled, Job, QueueOptions } from './queue.ts';
 export type { ConnectOptions, FollowOptions, Reply } from './connection.ts';
 export { encodeValue, writeValue } from './codec/encode.ts';
 export { decodeValue, readValue } from './codec/decode.ts';
