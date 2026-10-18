@@ -12,12 +12,13 @@ export type VaultAct =
   | { act: 'status' }
   | { act: 'unseal'; passphrase: string }
   | { act: 'seal' }
-  | { act: 'change'; current: string; next: string };
+  | { act: 'change'; current: string; next: string }
+  | { act: 'declare'; passphrase: string };
 
 /** The tenancy and name of one vault, as the frame names it. */
 export type Place = readonly [namespace: string, database: string, vault: string];
 
-const ACT = { status: 1, unseal: 2, seal: 3, change: 4 } as const;
+const ACT = { status: 1, unseal: 2, seal: 3, change: 4, declare: 5 } as const;
 
 /** Credentials, the target (the store, or one vault), then the act and its fields. */
 export function frameBody(
@@ -42,10 +43,13 @@ export function frameBody(
     w.u8(1);
     for (const name of place) w.text(name);
   } else {
+    if (act.act === 'declare') {
+      throw new ProtocolError('a declaration names its vault (protocol §3.14, act 5)');
+    }
     w.u8(0);
   }
   w.u8(ACT[act.act]);
-  if (act.act === 'unseal') w.text(act.passphrase ?? '');
+  if (act.act === 'unseal' || act.act === 'declare') w.text(act.passphrase ?? '');
   if (act.act === 'change') {
     w.text(act.current ?? '');
     w.text(act.next ?? '');

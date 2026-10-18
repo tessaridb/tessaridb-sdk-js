@@ -27,6 +27,9 @@ export const FRAME = {
 /** The minor a node must announce before a Vault frame is sent to it. */
 export const VAULT_MINOR = 2;
 
+/** The minor a node must announce before the vault frame's declare act (act 5) is sent to it. */
+export const DECLARE_MINOR = 6;
+
 /** The minor a node must announce before a feed's condition is sent to it (§3.7). */
 export const CONDITION_MINOR = 4;
 

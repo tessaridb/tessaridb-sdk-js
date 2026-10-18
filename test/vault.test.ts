@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import type { TestContext } from 'node:test';
 import {
+  NodeTooOldError,
   RefusalError,
   Vault,
   VaultArgumentError,
@@ -34,7 +35,7 @@ const corpus = readCorpus('vault-v1.json') as {
 };
 
 test('every frame is the corpus bytes', () => {
-  assert.equal(corpus.frames.length, 11, 'the corpus shrank');
+  assert.equal(corpus.frames.length, 12, 'the corpus shrank');
   for (const { name, build, body_hex } of corpus.frames) {
     const credentials = build['credentials'] as
       { name: string; password: string } | undefined;
@@ -45,7 +46,7 @@ test('every frame is the corpus bytes', () => {
         ? { user: credentials.name, password: credentials.password }
         : undefined,
       {
-        act: build['act'] as 'status' | 'unseal' | 'seal' | 'change',
+        act: build['act'] as 'status' | 'unseal' | 'seal' | 'change' | 'declare',
         passphrase: build['passphrase'] as string | undefined,
         current: build['current'] as string | undefined,
         next: build['new'] as string | undefined,
@@ -54,6 +55,26 @@ test('every frame is the corpus bytes', () => {
     );
     assert.equal(bytesToHex(body), body_hex, name);
   }
+});
+
+test('a declaration to a node below minor 6 is refused before sending', async () => {
+  let sent = false;
+  const older = {
+    peerMinor: 5,
+    vaultFrame: () => {
+      sent = true;
+      return Promise.reject(new Error('a frame was sent to a node without the act'));
+    },
+  } as unknown as Connection;
+  const refused = await new Vault(older, 'app', 'main', 'own')
+    .declare('a passphrase')
+    .catch((e: unknown) => e);
+  assert.ok(
+    refused instanceof NodeTooOldError && refused.found === 5 && refused.needed === 6,
+    String(refused),
+  );
+  assert.equal(sent, false);
+  assert.ok(!String(refused).includes('a passphrase'));
 });
 
 function rendered(build: Json): [string, Map<string, Value>] {
@@ -236,9 +257,11 @@ runs('the whole vault contract against a node', async (t) => {
   assert.deepEqual(await vault.reveal('github', ['password']), revealed);
 
   // A vault with its own passphrase: the store's opens nothing in it.
+  // Declared through the frame, so the passphrase is never script text.
+  const declared = await new Vault(conn, 'app', 'main', 'own').declare(TEAM);
+  assert.equal(declared.custody, 'own');
   await conn.execute(
-    `USE NAMESPACE app; USE DATABASE main; DEFINE VAULT own PASSPHRASE '${TEAM}'; ` +
-      'DEFINE FIELD token ON own TYPE string SECRET;',
+    'USE NAMESPACE app; USE DATABASE main; DEFINE FIELD token ON own TYPE string SECRET;',
   );
   const own = new Vault(conn, 'app', 'main', 'own');
   const status = await own.status();
