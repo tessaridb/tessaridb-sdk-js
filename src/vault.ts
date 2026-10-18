@@ -17,8 +17,9 @@
  * sent and dropped, and is in no error this package raises.
  */
 import type { Connection } from './connection.ts';
-import { ProtocolError } from './error.ts';
+import { NodeTooOldError, ProtocolError } from './error.ts';
 import type { Value } from './value.ts';
+import { DECLARE_MINOR } from './wire/frame.ts';
 import { frameBody, readStatus } from './vault/frame.ts';
 import type { Place, VaultAct, VaultStatus } from './vault/frame.ts';
 import { VaultStatements, auditStatement } from './vault/statements.ts';
@@ -125,6 +126,19 @@ export class Vault {
   /** Wrap this vault's key under a new passphrase; no secret is re-encrypted. */
   changePassphrase(current: string, next: string): Promise<VaultStatus> {
     return act(this.#conn, { act: 'change', current, next }, this.#place);
+  }
+
+  /**
+   * Declare this vault with its own passphrase, as `DEFINE VAULT … PASSPHRASE`
+   * does, with the passphrase sent as a field of the frame rather than in a
+   * script; the new vault is unsealed for the node's period. A
+   * {@link NodeTooOldError} before sending to a node below protocol minor 6.
+   */
+  declare(passphrase: string): Promise<VaultStatus> {
+    if (this.#conn.peerMinor < DECLARE_MINOR) {
+      return Promise.reject(new NodeTooOldError(this.#conn.peerMinor, DECLARE_MINOR));
+    }
+    return act(this.#conn, { act: 'declare', passphrase }, this.#place);
   }
 
   /** One page of ids after `after` (the previous page's `next`), 1 to 10000 of them. */
