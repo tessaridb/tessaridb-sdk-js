@@ -9,6 +9,10 @@ export { Connection } from './connection.ts';
 export type { Carrier } from './wire/carrier.ts';
 export { wireUrl } from './wire/websocket.ts';
 export { Cache, CacheArgumentError, CacheStatements, Lease } from './cache.ts';
+export {
+  ContainerArgumentError,
+  ContainerStatements,
+} from './containers/statements.ts';
 export type { Ttl } from './cache.ts';
 export { Consumer, ConsumerNameError } from './consumer.ts';
 export { Queue, QueueArgumentError } from './queue.ts';

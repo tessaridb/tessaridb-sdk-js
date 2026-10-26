@@ -1,5 +1,6 @@
 /**
- * A space used as a cache, a counter and a lock — cache contract 1.0
+ * A space used as a cache, a counter and a lock, and a key holding a list, a
+ * hash, a set or a ranking (`./containers.ts`) — cache contract 1.1
  * (`spec/cache-v1.md` in the protocol repository).
  *
  * A {@link Cache} uses a connection the caller holds and sends one statement per
@@ -20,6 +21,8 @@
  */
 
 import type { Connection } from './connection.ts';
+import { ContainerCalls } from './containers.ts';
+import { ContainerStatements } from './containers/statements.ts';
 import type { Value } from './value.ts';
 
 /** The most keys one listing may ask for (§2). */
@@ -236,20 +239,32 @@ export class Lease {
 }
 
 /** The space `space` in `namespace`/`database`, over a connection the caller holds. */
-export class Cache {
+export class Cache extends ContainerCalls {
   readonly #statements: CacheStatements;
   readonly #connection: Connection;
+  protected readonly containers: ContainerStatements;
 
   constructor(
     connection: Connection,
     options: { namespace: string; database: string; space: string },
   ) {
+    super();
     this.#statements = new CacheStatements(
       options.namespace,
       options.database,
       options.space,
     );
+    // The names were checked just above, by the statements every call shares.
+    this.containers = new ContainerStatements(
+      options.namespace,
+      options.database,
+      options.space,
+    );
     this.#connection = connection;
+  }
+
+  protected containerValue(rendered: Rendered): Promise<Value> {
+    return this.#value(rendered);
   }
 
   /** The value under `key`, or `undefined` when there is no such key. */

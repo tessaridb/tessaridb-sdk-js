@@ -255,6 +255,26 @@ the next holder's lock. `ttl()` keeps the store's two absences apart:
 `expires`, `never` or `absent`. The statements are the protocol repository's
 `spec/cache-v1.md`, which every client follows.
 
+A key may also hold a list, a hash, a set of members or a ranking. Each call
+is still one statement, atomic per key, and a key that is not there reads as
+empty:
+
+```js
+const text = (value) => ({ kind: 'string', value });
+await cache.listPush('jobs', [text('a'), text('b')]);
+const next = await cache.listPop('jobs');
+await cache.hashSet('user:1', new Map([['name', text('ada')]]));
+await cache.membersAdd('tags', [text('new')]);
+await cache.scoresAdd(
+  'board',
+  new Map([
+    ['ada', 3],
+    ['bob', 1],
+  ]),
+);
+const top = await cache.scoresRange('board', -3, -1); // the three highest, lowest first
+```
+
 ## A vault, and its passphrase
 
 A vault (`DEFINE VAULT`) keeps `SECRET` fields encrypted in every copy that is not a
