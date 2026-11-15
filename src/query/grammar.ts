@@ -12,7 +12,13 @@ import type { Value } from '../value.ts';
 
 /** The reasons a builder reports. The contract names these and no others. */
 export type RefusalReason =
-  'not-a-name' | 'incomplete' | 'not-a-span' | 'not-an-answerer';
+  | 'not-a-name'
+  | 'incomplete'
+  | 'not-a-span'
+  | 'not-an-answerer'
+  | 'not-a-store-kind'
+  | 'not-a-partition-count'
+  | 'partitions-without-store';
 
 /** Which grammatical position was at fault. The contract's own wording. */
 export type NamePosition = 'a table' | 'a field';
@@ -72,6 +78,33 @@ export class BuilderError extends Error {
       'not-an-answerer',
       undefined,
       offending,
+    );
+  }
+
+  static notAStoreKind(offending: string): BuilderError {
+    return new BuilderError(
+      `${JSON.stringify(offending)} is not a store kind — write "row" or "column"`,
+      'not-a-store-kind',
+      undefined,
+      offending,
+    );
+  }
+
+  static notAPartitionCount(offending: string): BuilderError {
+    return new BuilderError(
+      `${offending} is not a partition count — write a whole number from 1 up`,
+      'not-a-partition-count',
+      undefined,
+      offending,
+    );
+  }
+
+  static partitionsWithoutStore(): BuilderError {
+    return new BuilderError(
+      'partitions ride only a column store — write store: "column" beside them',
+      'partitions-without-store',
+      undefined,
+      undefined,
     );
   }
 }

@@ -77,11 +77,13 @@ export type {
 export {
   CreateInTable,
   CreateRecord,
+  DefineTable,
   DeleteRecord,
   Select,
   UpdateRecord,
   createInTable,
   createRecord,
+  defineTable,
   deleteRecord,
   select,
   updateRecord,

@@ -291,6 +291,87 @@ export class DeleteRecord {
   }
 }
 
+/**
+ * `DEFINE TABLE <name> (<columns>) [STORE ROW|COLUMN] [PARTITIONS n BY field]`
+ * (contract §4.11).
+ *
+ * The one definition the builder carries. Definitions name things and hold no
+ * values, so nothing binds — the partition count is the statement's shape,
+ * like `START` and `LIMIT`, and arrives as an integer.
+ */
+export class DefineTable {
+  readonly #table: string;
+  readonly #columns = new Map<string, string>();
+  #store: 'row' | 'column' | undefined;
+  #partitions: { count: number; by: string } | undefined;
+
+  constructor(table: string) {
+    this.#table = name('a table', table);
+  }
+
+  /** One declared column: the field's name and its type word. Columns render
+   * in the contract's byte order (§4.8), so call order is not rendered order. */
+  column(field: string, kind: string): this {
+    this.#columns.set(name('a field', field), kind);
+    return this;
+  }
+
+  /** `STORE ROW` or `STORE COLUMN`, from a caller's word — checked, because a
+   * string that arrived from outside is exactly what must not reach the
+   * script unexamined. */
+  store(kind: string): this {
+    if (kind !== 'row' && kind !== 'column') {
+      throw BuilderError.notAStoreKind(kind);
+    }
+    this.#store = kind;
+    return this;
+  }
+
+  storeRow(): this {
+    this.#store = 'row';
+    return this;
+  }
+
+  storeColumn(): this {
+    this.#store = 'column';
+    return this;
+  }
+
+  /** `PARTITIONS <count> BY <field>` — refused here when the count is not a
+   * whole number of at least one, and at render beside any store other than
+   * `column`. */
+  partitions(count: number, by: string): this {
+    if (!Number.isInteger(count) || count < 1) {
+      throw BuilderError.notAPartitionCount(String(count));
+    }
+    this.#partitions = { count, by: name('a field', by) };
+    return this;
+  }
+
+  render(): Rendered {
+    const columns = Array.from(this.#columns.keys())
+      .sort()
+      .map((field) => `${field} ${this.#columns.get(field)}`)
+      .join(', ');
+    let script = `DEFINE TABLE ${this.#table} (${columns})`;
+    if (this.#store !== undefined) {
+      script += ` STORE ${this.#store.toUpperCase()}`;
+    }
+    if (this.#partitions !== undefined) {
+      if (this.#store !== 'column') {
+        throw BuilderError.partitionsWithoutStore();
+      }
+      script += ` PARTITIONS ${this.#partitions.count} BY ${this.#partitions.by}`;
+    }
+    // A definition binds nothing: every position names a thing.
+    return { script: `${script};`, parameters: new Map() };
+  }
+}
+
+export function defineTable(table: string): DefineTable {
+  return new DefineTable(table);
+}
+
 export function select(table: string): Select {
   return new Select(table);
 }
