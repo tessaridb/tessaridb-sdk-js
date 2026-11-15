@@ -12,6 +12,7 @@ import {
   compare,
   createInTable,
   createRecord,
+  defineTable,
   deleteRecord,
   or,
   select,
@@ -112,6 +113,26 @@ export function render(build: Json): Rendered {
   if ('delete_record' in build) {
     const d = build['delete_record'] as Json;
     return deleteRecord(d['table'] as string, valueOf(d['id'] as never)).render();
+  }
+
+  if ('define_table' in build) {
+    const d = build['define_table'] as Json;
+    const defined = defineTable(d['table'] as string);
+    const columns = d['columns'] as Record<string, string> | undefined;
+    if (columns !== undefined) {
+      for (const [field, kind] of Object.entries(columns)) {
+        defined.column(field, kind);
+      }
+    }
+    const store = d['store'] as string | undefined;
+    if (store !== undefined) {
+      defined.store(store);
+    }
+    const partitions = d['partitions'] as { count: number; by: string } | undefined;
+    if (partitions !== undefined) {
+      defined.partitions(partitions.count, partitions.by);
+    }
+    return defined.render();
   }
 
   throw new Error(
